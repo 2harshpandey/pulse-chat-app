@@ -5,7 +5,7 @@ const axios = require('axios');
 const { WebSocketServer, WebSocket } = require('ws');
 const cors = require('cors');
 const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const CloudinaryStorage = require('multer-storage-cloudinary').CloudinaryStorage;
 const multer = require('multer');
 const logger = require('./logger');
 const fs = require('fs');
@@ -51,12 +51,12 @@ app.use(express.json());
 // --- Helper Functions ---
 const broadcastToAdmins = (type, data) => {
   const message = JSON.stringify({ type, data });
-  logger.info(`[DIAG] Broadcasting to ${adminClients.size} admin(s): ${message}`);
+  logger.info(`Broadcasting to ${adminClients.size} admin client(s): ${message}`);
   adminClients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(message);
     } else {
-      logger.info(`[DIAG] Admin client not open. State: ${client.readyState}`);
+      logger.info(`Admin client not open. State: ${client.readyState}`);
     }
   });
 };
@@ -185,7 +185,8 @@ app.get('/api/admin/messages', adminAuth, async (req, res) => {
 });
 
 app.get('/api/admin/users', adminAuth, async (req, res) => {
-    const users = await User.find();
+    console.log('Online users:', Array.from(onlineUsers.values()));
+    const users = Array.from(onlineUsers.values());
     res.json(users);
 });
 
@@ -218,7 +219,10 @@ wss.on('connection', (ws, req) => {
     ws.isAdmin = true;
     adminClients.add(ws);
     logger.info('An admin client connected!');
-    ws.send(JSON.stringify({ type: 'activity', data: 'An admin client connected to admin channel.' }));
+    broadcastToAdmins('activity', 'An admin client connected to admin channel.');
+    User.find().then(allDbUsers => {
+      ws.send(JSON.stringify({ type: 'users', data: allDbUsers }));
+    });
     
     ws.on('close', () => {
       adminClients.delete(ws);
@@ -238,21 +242,20 @@ wss.on('connection', (ws, req) => {
 
     switch (parsedMessage.type) {
       case 'user_join': {
-        const { userId, username, userColor } = parsedMessage;
+        const { userId, username } = parsedMessage;
         ws.userId = userId;
-        onlineUsers.set(userId, { userId, username, userColor });
+        onlineUsers.set(userId, { userId, username });
+        console.log('Online users:', Array.from(onlineUsers.values()));
         
         // Find or create user in DB
         User.findOneAndUpdate(
           { userId },
-          { userId, username, userColor },
+          { userId, username },
           { upsert: true, new: true }
         ).catch(err => logger.error('Failed to save user:', err));
 
         logger.info(`User '${username}' joined.`);
-        User.find().then(allDbUsers => {
-          broadcastToAdmins('users', allDbUsers);
-        });
+broadcastToAdmins('user_joined', { userId, username });
         broadcastToAdmins('activity', `User '${username}' connected.`);
         broadcastOnlineUsers();
         ws.send(JSON.stringify({ type: 'history', data: messageHistory }));
@@ -260,7 +263,7 @@ wss.on('connection', (ws, req) => {
       }
       case 'react': {
         const { messageId, userId, emoji } = parsedMessage;
-        const username = allUsers.get(userId)?.username || 'Unknown';
+        const username = onlineUsers.get(userId)?.username || 'Unknown';
         const message = messageHistory.find(m => m.id === messageId);
 
         if (message) {
@@ -437,9 +440,10 @@ wss.on('connection', (ws, req) => {
         broadcastToAdmins('activity', `User '${username}' disconnected.`);
         logger.info(`[B] Disconnect broadcast sent for user '${username}'.`);
       });
-      onlineUsers.delete(ws.userId);
+onlineUsers.delete(ws.userId);
       typingUsers.delete(ws.userId);
       broadcastOnlineUsers();
+      broadcastToAdmins('user_left', { userId: ws.userId });
     }
   });
   ws.on('error', (error) => logger.error('WebSocket Error:', { message: error.message }));
@@ -468,6 +472,12 @@ startServer();
 
 // Watch for changes in the log file and broadcast to admins
 const logFilePath = path.join(__dirname, 'pulse-activity.log');
+
+// Ensure log file exists before watching
+if (!fs.existsSync(logFilePath)) {
+  fs.writeFileSync(logFilePath, ''); // Create empty file
+}
+
 fs.watch(logFilePath, (eventType, filename) => {
   if (eventType === 'change') {
     fs.readFile(logFilePath, 'utf8', (err, data) => {
