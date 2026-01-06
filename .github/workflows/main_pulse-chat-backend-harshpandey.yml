@@ -19,7 +19,7 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: '20.x' # Use 20.x to match your Azure App Service
+          node-version: '20.x' # Updated to 20.x as per user's selection
 
       - name: npm install
         working-directory: ./backend
@@ -48,7 +48,8 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'pulse-chat-backend-harshpandey'
+          app-name: 'pulse-chat-backend-harshpandey' # Updated app name
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_5A1F5EF3D962405AB4AA6EA27E486E1D }} # Ensure this matches your latest secret
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_5A1F5EF3D962405AB4AA6EA27E486E1D }}
+
