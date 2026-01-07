@@ -2178,7 +2178,11 @@ function Chat() {
           </GifPickerContent>
         </GifPickerModal>
       )}
-      <Header><HeaderTitle>Pulse</HeaderTitle><MobileUserListToggle onClick={() => setIsUserListVisible(!isUserListVisible)}>👥</MobileUserListToggle></Header>
+      <Header><HeaderTitle>Pulse</HeaderTitle>            <MobileUserListToggle onClick={() => setIsUserListVisible(!isUserListVisible)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5 0 00-.75-2.906A3.005 3 0 0119 15v3h-3zM4.75 12.094A5.973 4 0 001 15v3h3v-3a3.005 3 0 013.25-2.906z" />
+                </svg>
+            </MobileUserListToggle></Header>
         <LayoutContainer>
           <ChatWindow>
             <MessagesContainer>
