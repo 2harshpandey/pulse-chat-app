@@ -19,10 +19,8 @@ const messageSchema = new mongoose.Schema({
   isDeleted: { type: Boolean, default: false },
   edited: { type: Boolean, default: false },
   replyingTo: {
-    id: String,
-    username: String,
-    text: String,
-    type: String,
+    type: Object,
+    default: null
   },
   reactions: {
     type: Map,
