@@ -1155,7 +1155,14 @@ const MessageItem = React.memo(({
     }
   }, [isEditing]);
 
-  useDrag(({ active, movement: [mx], last }) => {
+  useDrag(({ active, movement: [mx], last, tap }) => {
+    if (tap) {
+      if (isSelectModeActive) {
+        handleToggleSelectMessage(msg.id);
+        return;
+      }
+    }
+    
     // If a drag gesture starts, always cancel the long-press-to-select timer.
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
@@ -1229,15 +1236,6 @@ const MessageItem = React.memo(({
       $sender={sender}
       $isSelected={isSelected}
       $isActiveDeleteMenu={activeDeleteMenu === msg.id}
-      onClick={() => {
-        if (wasLongPressed.current) {
-          wasLongPressed.current = false;
-          return;
-        }
-        if (isSelectModeActive) {
-          handleToggleSelectMessage(msg.id);
-        }
-      }}
       onDoubleClick={(e) => {
         if (!isMobileView && !isSelectModeActive && !isDeleted) {
           e.preventDefault();
