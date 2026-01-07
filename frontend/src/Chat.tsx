@@ -1199,7 +1199,7 @@ const MessageItem = React.memo(({
     }
   }, [isEditing]);
 
-  useDrag(({ active, movement: [mx], last, tap }) => {
+  useDrag(({ active, movement: [mx, my], last, tap }) => {
     if (tap) {
       // If this 'tap' is the end of a long press, reset the flag and do nothing.
       if (wasLongPressed.current) {
@@ -1213,13 +1213,14 @@ const MessageItem = React.memo(({
       }
     }
     
-    // If a drag gesture starts, always cancel the long-press-to-select timer.
-    if (longPressTimerRef.current) {
+    // If a drag gesture is active (i.e., user is scrolling), always cancel the long-press-to-select timer.
+    if (active && longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
 
-    if (isMobileView && !isSelectModeActive && messageRowRef.current) {
+    // Only perform swipe-to-reply logic for horizontal swipes, not vertical scrolls.
+    if (isMobileView && !isSelectModeActive && messageRowRef.current && Math.abs(mx) > Math.abs(my)) {
       if (last) {
         // If the drag was far enough, trigger the reply action.
         if (mx > 70) {
@@ -1238,7 +1239,7 @@ const MessageItem = React.memo(({
         messageRowRef.current.style.transition = 'none';
       }
     }
-  }, { axis: 'x', filterTaps: true, eventOptions: { passive: true }, target: messageRowRef });
+  }, { filterTaps: true, eventOptions: { passive: true }, target: messageRowRef });
   
   const currentUserReaction = getReactionByUserId(msg.id, currentUserId);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
