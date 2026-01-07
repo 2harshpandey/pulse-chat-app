@@ -1478,6 +1478,7 @@ function Chat() {
   const handleClearChat = () => {
     if (window.confirm('Are you sure you want to clear the chat for this session? The messages will reappear when you log back in.')) {
         setMessages([]);
+        sessionStorage.setItem('chatCleared', 'true');
     }
   };
 
@@ -1557,11 +1558,20 @@ function Chat() {
   };
 
   useEffect(() => {
+    // When the component mounts, check if the chat should be cleared.
+    if (sessionStorage.getItem('chatCleared') === 'true') {
+      setMessages([]);
+    }
+
     if (!userContext?.profile) return;
     ws.current = new WebSocket(process.env.REACT_APP_API_URL?.replace('http', 'ws') || 'ws://localhost:8080');
     ws.current.onopen = () => { ws.current?.send(JSON.stringify({ type: 'user_join', ...userContext.profile, userId: userIdRef.current })); };
     ws.current.onclose = () => console.log('Disconnected');
     ws.current.onmessage = (event: MessageEvent) => {
+      // If chat is cleared, ignore all incoming messages.
+      if (sessionStorage.getItem('chatCleared') === 'true') {
+        return;
+      }
       const messageData = JSON.parse(event.data);
       if (messageData.type === 'history') {
         setMessages(messageData.data.map(normalizeMessage));
