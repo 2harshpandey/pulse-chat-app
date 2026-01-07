@@ -1157,6 +1157,12 @@ const MessageItem = React.memo(({
 
   useDrag(({ active, movement: [mx], last, tap }) => {
     if (tap) {
+      // If this 'tap' is the end of a long press, reset the flag and do nothing.
+      if (wasLongPressed.current) {
+        wasLongPressed.current = false;
+        return;
+      }
+      // Otherwise, if it's a genuine tap in select mode, toggle the selection.
       if (isSelectModeActive) {
         handleToggleSelectMessage(msg.id);
         return;
