@@ -36,7 +36,6 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = () => {
-    localStorage.removeItem('pulseUserId');
     localStorage.removeItem('pulseUsername');
     sessionStorage.removeItem('chatCleared'); // Reset the chat clear flag on logout
     setProfile(null);
