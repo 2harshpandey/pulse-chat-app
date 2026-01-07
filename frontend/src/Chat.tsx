@@ -1601,7 +1601,11 @@ function Chat() {
     return () => ws.current?.close();
   }, [userContext?.profile]);
 
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+    useLayoutEffect(() => {
+
+      chatEndRef.current?.scrollIntoView();
+
+    }, [messages]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
