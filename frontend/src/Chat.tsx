@@ -101,19 +101,22 @@ const LayoutContainer = styled.div`
 const ChatWindow = styled.main`
   position: relative;
   flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: ${slideIn} 0.5s ease-out forwards;
   -webkit-overflow-scrolling: touch; /* Enable momentum scrolling on iOS */
   touch-action: pan-y; /* Allow vertical panning */
 `;
-const MessagesContainer = styled.div`
+const MessagesContainer = styled.div<{ $isScrollButtonVisible?: boolean; $isMobileView?: boolean; }>`
   flex-grow: 1;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  overflow-y: auto;
+  padding: 1rem;
+  padding-right: ${props => !props.$isMobileView && props.$isScrollButtonVisible ? '64px' : '1rem'};
+  transition: padding-right 0.3s ease;
 `;
 
 const MessageRow = styled.div<{ $sender: string; $isSelected?: boolean; $isActiveDeleteMenu?: boolean; }>`
@@ -1365,7 +1368,11 @@ const MessageItem = React.memo(({
                 </QuotedMessageContainer>
               )}
               {selectedMessages[0] === msg.id && selectedMessages.length === 1 && (
-                <MobileReactionPicker $sender={sender}>
+                <MobileReactionPicker 
+                  $sender={sender}
+                  onMouseDown={e => e.stopPropagation()}
+                  onTouchStart={e => e.stopPropagation()}
+                >
                   {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
                     <ReactionEmoji key={emoji} onMouseDown={() => {
                       handleReact(msg.id, emoji);
@@ -1478,7 +1485,7 @@ const FileIcon = () => (
 
 const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
   position: absolute;
-  bottom: 20px;
+  bottom: 50px;
   right: 20px;
   width: 44px;
   height: 44px;
@@ -1515,9 +1522,8 @@ function Chat() {
   const userContext = useContext(UserContext);
 
   const handleClearChat = () => {
-    if (window.confirm('Are you sure you want to clear the chat for this session? The messages will reappear when you log back in.')) {
+    if (window.confirm('Are you sure you want to clear the chat view? Messages will reappear on refresh.')) {
         setMessages([]);
-        sessionStorage.setItem('chatCleared', 'true');
     }
   };
 
@@ -1599,20 +1605,11 @@ function Chat() {
   };
 
   useEffect(() => {
-    // When the component mounts, check if the chat should be cleared.
-    if (sessionStorage.getItem('chatCleared') === 'true') {
-      setMessages([]);
-    }
-
     if (!userContext?.profile) return;
     ws.current = new WebSocket(process.env.REACT_APP_API_URL?.replace('http', 'ws') || 'ws://localhost:8080');
     ws.current.onopen = () => { ws.current?.send(JSON.stringify({ type: 'user_join', ...userContext.profile, userId: userIdRef.current })); };
     ws.current.onclose = () => console.log('Disconnected');
     ws.current.onmessage = (event: MessageEvent) => {
-      // If chat is cleared, ignore all incoming messages.
-      if (sessionStorage.getItem('chatCleared') === 'true') {
-        return;
-      }
       const messageData = JSON.parse(event.data);
       if (messageData.type === 'history') {
         setMessages(messageData.data.map(normalizeMessage));
@@ -1639,9 +1636,10 @@ function Chat() {
   }, [userContext?.profile]);
 
     useLayoutEffect(() => {
-
-      chatEndRef.current?.scrollIntoView();
-
+      const container = chatContainerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     }, [messages]);
 
   useEffect(() => {
@@ -2080,7 +2078,7 @@ function Chat() {
     if (container) {
       const { scrollTop, scrollHeight, clientHeight } = container;
       // Show button if scrolled up more than 300px from the bottom
-      const isScrolledUp = (scrollHeight - scrollTop - clientHeight) > 300;
+      const isScrolledUp = (scrollHeight - scrollTop - clientHeight) > 20;
       setIsScrollToBottomVisible(isScrolledUp);
     }
   };
@@ -2236,9 +2234,10 @@ function Chat() {
       <Header><HeaderTitle>Pulse</HeaderTitle>            <MobileUserListToggle onClick={() => setIsUserListVisible(!isUserListVisible)}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
             </MobileUserListToggle>
+      </Header>
         <LayoutContainer>
-          <ChatWindow ref={chatContainerRef} onScroll={handleScroll}>
-            <MessagesContainer>
+          <ChatWindow>
+            <MessagesContainer ref={chatContainerRef} onScroll={handleScroll} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
               {messages.map((msg: Message) => (
                 <MessageItem
                   key={msg.id}
