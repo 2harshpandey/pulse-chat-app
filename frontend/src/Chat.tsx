@@ -507,6 +507,42 @@ const MobileUserListToggle = styled(AttachButton)`
   @media (max-width: 768px) { display: flex; }
 `;
 
+const ClearChatButton = styled.button`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 15px;
+  margin-top: 1rem;
+  background-color: #64748B; /* A neutral gray */
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    background-color: #475569;
+    transform: translateY(-2px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+
+  svg {
+    width: 20px;
+    height: 20px;
+    stroke: white;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+`;
+
 const LogoutButton = styled.button`
   display: flex;
   align-items: center;
@@ -514,7 +550,7 @@ const LogoutButton = styled.button`
   gap: 8px;
   width: 100%;
   padding: 10px 15px;
-  margin-top: 1rem; /* Add some space from the user list */
+  margin-top: 0.5rem; /* Reduced margin to bring buttons closer */
   background-color: #EF4444;
   color: white;
   border: none;
@@ -1438,6 +1474,13 @@ const FileIcon = () => (
 
 function Chat() {
   const userContext = useContext(UserContext);
+
+  const handleClearChat = () => {
+    if (window.confirm('Are you sure you want to clear the chat for this session? The messages will reappear when you log back in.')) {
+        setMessages([]);
+    }
+  };
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -2165,6 +2208,10 @@ function Chat() {
           <UserSidebar $isVisible={isUserListVisible}>
             <h2>Online ({onlineUsers.length})</h2>
             <UserList>{onlineUsers.map((user, index) => <UserListItem key={user.userId} index={index}>{user.username}</UserListItem>)}</UserList>
+              <ClearChatButton onClick={handleClearChat}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9l-6-6H5a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"></path><path d="M15 3v6h6"></path><path d="M9.5 12.5 14.5 17.5"></path><path d="m14.5 12.5-5 5"></path></svg>
+                Clear Chat
+              </ClearChatButton>
             <LogoutButton onClick={userContext!.logout}>
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
               Logout
