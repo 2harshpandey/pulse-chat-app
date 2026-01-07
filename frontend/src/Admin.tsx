@@ -35,6 +35,45 @@ const LoginBox = styled.div`
   align-items: center;
 `;
 
+const PasswordInputWrapper = styled.div`
+  position: relative;
+  width: 300px;
+  margin-bottom: 1rem;
+`;
+
+const EyeIconButton = styled.button`
+  position: absolute;
+  top: 50%;
+  right: 0.25rem;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  &:hover {
+    color: #4a5568;
+  }
+`;
+
+const PasswordInput = styled.input`
+  padding: 0.75rem 3rem 0.75rem 1rem; /* Add padding-right for icon */
+  font-size: 1rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  width: 100%;
+  transition: all 0.2s;
+  &:focus {
+    outline: none;
+    border-color: #3B82F6;
+    box-shadow: 0 0 0 2px #bfdbfe;
+  }
+`;
+
 const Input = styled.input`
   padding: 0.75rem 1rem;
   font-size: 1rem;
@@ -264,6 +303,7 @@ const ClearHistoryButton = styled(Button)`
 
 const Admin = () => {
   const [password, setPassword] = useState('');
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState('');
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -543,13 +583,22 @@ const Admin = () => {
       <LoginFormContainer>
         <LoginBox>
           <Title>Admin Login</Title>
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
+          <PasswordInputWrapper>
+            <PasswordInput
+              type={isPasswordVisible ? 'text' : 'password'}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <EyeIconButton type="button" onClick={() => setIsPasswordVisible(prev => !prev)}>
+              {isPasswordVisible ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              )}
+            </EyeIconButton>
+          </PasswordInputWrapper>
           <Button onClick={handleLogin} disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</Button>
           {error && <ErrorMessage>{error}</ErrorMessage>}
         </LoginBox>
