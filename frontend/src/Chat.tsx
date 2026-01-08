@@ -1190,6 +1190,7 @@ const MessageItem = React.memo(({
   const isEditing = editingMessageId === msg.id;
   const editInputRef = useRef<HTMLTextAreaElement>(null!);
   const messageRowRef = useRef<HTMLDivElement>(null!);
+  const pickerInteractionRef = useRef(false);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -1201,6 +1202,10 @@ const MessageItem = React.memo(({
 
   useDrag(({ active, movement: [mx, my], last, tap }) => {
     if (tap) {
+      if (pickerInteractionRef.current) {
+        pickerInteractionRef.current = false;
+        return;
+      }
       // If this 'tap' is the end of a long press, reset the flag and do nothing.
       if (wasLongPressed.current) {
         wasLongPressed.current = false;
@@ -1376,18 +1381,28 @@ const MessageItem = React.memo(({
               {selectedMessages[0] === msg.id && selectedMessages.length === 1 && (
                 <MobileReactionPicker 
                   $sender={sender}
-                  onClick={e => e.stopPropagation()}
                 >
                   {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
                     <ReactionEmoji key={emoji} onClick={() => {
+                      pickerInteractionRef.current = true;
                       handleReact(msg.id, emoji);
                       handleCancelSelectMode();
+                      setTimeout(() => { pickerInteractionRef.current = false; }, 100);
                     }}>{emoji}</ReactionEmoji>
                   ))}
                   {currentUserReaction ? (
-                    <ReactionEmoji onClick={() => { handleReact(msg.id, currentUserReaction); handleCancelSelectMode(); }}>{currentUserReaction}</ReactionEmoji>
+                    <ReactionEmoji onClick={() => { 
+                      pickerInteractionRef.current = true;
+                      handleReact(msg.id, currentUserReaction); 
+                      handleCancelSelectMode(); 
+                      setTimeout(() => { pickerInteractionRef.current = false; }, 100);
+                    }}>{currentUserReaction}</ReactionEmoji>
                   ) : (
-                    <ReactionEmoji $isPlusIcon={true} onClick={(e) => handleOpenFullEmojiPicker(e.currentTarget.getBoundingClientRect(), msg.id)}>+</ReactionEmoji>
+                    <ReactionEmoji $isPlusIcon={true} onClick={(e) => {
+                      pickerInteractionRef.current = true;
+                      handleOpenFullEmojiPicker(e.currentTarget.getBoundingClientRect(), msg.id);
+                      setTimeout(() => { pickerInteractionRef.current = false; }, 100);
+                    }}>+</ReactionEmoji>
                   )}
                 </MobileReactionPicker>
               )}
