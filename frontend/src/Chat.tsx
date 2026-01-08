@@ -1792,6 +1792,13 @@ function Chat() {
         .then(uploadedFileData => {
           const finalMessage = { ...message, ...uploadedFileData, isUploading: false, id: uploadedFileData.id };
           setMessages(prev => prev.map(m => m.id === tempId ? finalMessage : m));
+          
+          if (sessionStorage.getItem('chatCleared') === 'true') {
+            const stored = JSON.parse(sessionStorage.getItem('clearedChatMessages') || '[]');
+            stored.push(finalMessage);
+            sessionStorage.setItem('clearedChatMessages', JSON.stringify(stored));
+          }
+
           ws.current?.send(JSON.stringify(finalMessage));
         })
         .catch(error => {
@@ -1804,11 +1811,25 @@ function Chat() {
     } else if (stagedGif) {
       const gifMessage: Message = { id: stagedGif.id, userId: userIdRef.current, username: userContext.profile.username, type: 'image', url: stagedGif.url, text: inputMessage, timestamp: new Date().toISOString(), replyingTo: replyContext };
       setMessages(prev => [...prev, gifMessage]);
+
+      if (sessionStorage.getItem('chatCleared') === 'true') {
+        const stored = JSON.parse(sessionStorage.getItem('clearedChatMessages') || '[]');
+        stored.push(gifMessage);
+        sessionStorage.setItem('clearedChatMessages', JSON.stringify(stored));
+      }
+
       ws.current.send(JSON.stringify(gifMessage));
       resetInput();
     } else {
       const textMessage: Message = { id: Date.now().toString(), userId: userIdRef.current, username: userContext.profile.username, type: 'text', text: inputMessage, timestamp: new Date().toISOString(), replyingTo: replyContext };
       setMessages(prev => [...prev, textMessage]);
+      
+      if (sessionStorage.getItem('chatCleared') === 'true') {
+        const stored = JSON.parse(sessionStorage.getItem('clearedChatMessages') || '[]');
+        stored.push(textMessage);
+        sessionStorage.setItem('clearedChatMessages', JSON.stringify(stored));
+      }
+
       ws.current.send(JSON.stringify(textMessage));
       resetInput();
     }
