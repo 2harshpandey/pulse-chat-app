@@ -1541,6 +1541,7 @@ function Chat() {
     if (window.confirm('Are you sure you want to clear the chat for this session? Messages will reappear after you log out and log back in.')) {
         setMessages([]);
         sessionStorage.setItem('chatCleared', 'true');
+        sessionStorage.setItem('clearedChatMessages', '[]');
     }
   };
 
@@ -1622,9 +1623,11 @@ function Chat() {
   };
 
   useEffect(() => {
-    // When the component mounts, check if the chat should be cleared for this session.
-    if (sessionStorage.getItem('chatCleared') === 'true') {
-      setMessages([]);
+    const chatCleared = sessionStorage.getItem('chatCleared') === 'true';
+
+    if (chatCleared) {
+      const storedMessages = JSON.parse(sessionStorage.getItem('clearedChatMessages') || '[]');
+      setMessages(storedMessages);
     }
 
     if (!userContext?.profile) return;
@@ -1633,13 +1636,13 @@ function Chat() {
     ws.current.onclose = () => console.log('Disconnected');
     ws.current.onmessage = (event: MessageEvent) => {
       const messageData = JSON.parse(event.data);
-      const chatCleared = sessionStorage.getItem('chatCleared') === 'true';
+      const isCleared = sessionStorage.getItem('chatCleared') === 'true';
 
       if (messageData.type === 'history') {
-        if (!chatCleared) {
+        if (!isCleared) {
             setMessages(messageData.data.map(normalizeMessage));
         }
-        // If chat is cleared, do nothing and ignore the history message.
+        // If chat is cleared, do nothing, as we've already loaded the temp messages.
       } else if (messageData.type === 'chat_cleared') {
         setMessages([]);
       } else if (messageData.type === 'delete') {
@@ -1657,7 +1660,15 @@ function Chat() {
         );
       } else {
         // This handles all other messages, including new text/image/video
-        setMessages(prev => [...prev, normalizeMessage(messageData)]);
+        const newMessage = normalizeMessage(messageData);
+        setMessages(prev => [...prev, newMessage]);
+
+        // If chat was cleared, persist this new message to the temporary session storage
+        if (isCleared) {
+          const stored = JSON.parse(sessionStorage.getItem('clearedChatMessages') || '[]');
+          stored.push(newMessage);
+          sessionStorage.setItem('clearedChatMessages', JSON.stringify(stored));
+        }
       }
     };
     return () => ws.current?.close();
