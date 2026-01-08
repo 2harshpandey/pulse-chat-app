@@ -1377,7 +1377,6 @@ const MessageItem = React.memo(({
                 <MobileReactionPicker 
                   $sender={sender}
                   onClick={e => e.stopPropagation()}
-                  onTouchStart={e => e.stopPropagation()}
                 >
                   {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
                     <ReactionEmoji key={emoji} onClick={() => {
