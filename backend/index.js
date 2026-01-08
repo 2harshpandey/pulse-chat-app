@@ -17,8 +17,7 @@ const MessageEvent = require('./models/messageEvent');
 
 
 // --- In-Memory Stores (For live data, not for persistence) ---
-let messageHistory = []; // Cache for recent messages
-const MAX_HISTORY = 200;
+// messageHistory cache is removed to support infinite scroll. DB is now the source of truth.
 const onlineUsers = new Map();
 const typingUsers = new Map();
 const adminClients = new Set();
@@ -177,7 +176,7 @@ app.delete('/api/delete/:id', async (req, res) => {
     }
     
     await Message.deleteOne({ id: messageId });
-    messageHistory = messageHistory.filter(msg => msg.id !== messageId);
+
 
     const deleteMessage = { type: 'delete', id: messageId };
     wss.clients.forEach(client => {
@@ -195,7 +194,7 @@ app.delete('/api/messages/all', adminSecretAuth, async (req, res) => {
     try {
         await Message.deleteMany({});
         await MessageEvent.deleteMany({});
-        messageHistory = [];
+
         
         broadcast({ type: 'chat_cleared' });
         
@@ -266,6 +265,29 @@ app.get('/api/admin/server-logs', adminAuth, (req, res) => {
   });
 });
 
+// Route for fetching paginated messages for infinite scroll
+app.get('/api/messages', async (req, res) => {
+    try {
+        const limit = 50;
+        const { before } = req.query; // 'before' will be the 'createdAt' timestamp of the oldest message client-side
+
+        const query = {};
+        if (before) {
+            query.createdAt = { $lt: new Date(before) };
+        }
+
+        const messages = await Message.find(query)
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .lean();
+        
+        res.json(messages.reverse()); // Send oldest-first, so client can simply prepend
+    } catch (error) {
+        logger.error('Failed to fetch paginated messages:', { message: error.message, stack: error.stack });
+        res.status(500).json({ error: 'Failed to fetch messages' });
+    }
+});
+
 // --- WebSocket Connection Logic ---
 wss.on('connection', (ws, req) => {
   // Heartbeat setup for the new connection
@@ -323,7 +345,12 @@ wss.on('connection', (ws, req) => {
 broadcastToAdmins('user_joined', { userId, username });
         broadcastToAdmins('activity', `User '${username}' connected.`);
         broadcastOnlineUsers();
-        ws.send(JSON.stringify({ type: 'history', data: messageHistory }));
+        // Send the last 50 messages as the initial history
+        Message.find().sort({ createdAt: -1 }).limit(50).lean()
+          .then(messages => {
+            ws.send(JSON.stringify({ type: 'history', data: messages.reverse() }));
+          })
+          .catch(err => logger.error('Failed to send initial history:', err));
         break;
       }
       case 'react': {
@@ -470,9 +497,6 @@ broadcastToAdmins('user_joined', { userId, username });
         });
         messageDoc.save();
 
-        messageHistory.push(messageDoc.toObject());
-        if (messageHistory.length > MAX_HISTORY) messageHistory.shift();
-
         User.findOne({ userId: ws.userId }).then(user => {
             const username = user ? user.username : 'Unknown';
             const event = new MessageEvent({
@@ -518,16 +542,7 @@ onlineUsers.delete(ws.userId);
 const startServer = async () => {
   await connectDB();
   
-  // Load initial message history
-  try {
-    messageHistory = await Message.find().sort({ createdAt: -1 }).limit(MAX_HISTORY).lean();
-    messageHistory.reverse();
-    logger.info(`Loaded ${messageHistory.length} messages into history cache.`);
-  } catch (error) {
-    logger.error('Failed to load message history:', { message: error.message });
-  }
-
-  server.listen(PORT, () => {
+server.listen(PORT, () => {
     logger.info(`Server is listening on port ${PORT}`);
   });
 };
