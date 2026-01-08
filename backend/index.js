@@ -323,7 +323,7 @@ wss.on('connection', (ws, req) => {
 
   logger.info('A new client connected!');
 
-  ws.on('message', (message) => {
+  ws.on('message', async (message) => {
     const parsedMessage = JSON.parse(message.toString());
     logger.info('Received message:', parsedMessage);
 
@@ -356,7 +356,7 @@ broadcastToAdmins('user_joined', { userId, username });
       case 'react': {
         const { messageId, userId, emoji } = parsedMessage;
         const username = onlineUsers.get(userId)?.username || 'Unknown';
-        const message = messageHistory.find(m => m.id === messageId);
+        const message = await Message.findOne({ id: messageId });
 
         if (message) {
           if (!message.reactions) {
@@ -385,7 +385,7 @@ broadcastToAdmins('user_joined', { userId, username });
             message.reactions[emoji].push({ userId, username });
           }
           
-          Message.updateOne({ id: messageId }, { $set: { reactions: message.reactions } }).catch(err => logger.error('Failed to update reactions:', err));
+          await Message.updateOne({ id: messageId }, { $set: { reactions: message.reactions } });
 
           // Broadcast the update
           wss.clients.forEach(client => {
@@ -398,16 +398,18 @@ broadcastToAdmins('user_joined', { userId, username });
       }      case 'edit': {
         const { messageId, newText } = parsedMessage;
         
-        const msg = messageHistory.find(m => m.id === messageId);
+        const msg = await Message.findOne({ id: messageId });
         if (!msg) return;
         const oldText = msg.text;
         
-        // Update in-memory cache
-        msg.text = newText;
-        msg.edited = true;
-
         // Update in DB
-        Message.updateOne({ id: messageId }, { $set: { text: newText, edited: true } }).catch(err => logger.error('Failed to edit message:', err));
+        await Message.updateOne({ id: messageId }, { $set: { text: newText, edited: true } });
+
+        const updatedMsgForBroadcast = {
+          ...msg.toObject(),
+          text: newText,
+          edited: true
+        };
 
         User.findOne({ userId: ws.userId }).then(user => {
           const username = user ? user.username : 'Unknown';
@@ -425,7 +427,7 @@ broadcastToAdmins('user_joined', { userId, username });
           broadcastToAdmins('activity', `Message (ID: ${messageId}) edited by '${username}'. New text: "${newText}"`);
         });
 
-        const updateMsg = { type: 'update', data: msg };
+        const updateMsg = { type: 'update', data: updatedMsgForBroadcast };
         wss.clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(updateMsg)); });
         break;
       }
