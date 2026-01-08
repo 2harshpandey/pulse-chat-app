@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useContext, useLayoutEffect } from 'react';
 import styled, { createGlobalStyle, keyframes } from 'styled-components';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
-import { useGesture, useDrag } from '@use-gesture/react';
+import { useDrag } from '@use-gesture/react';
 import { UserContext, UserProfile } from './UserContext';
 import Auth from './Auth';
 
@@ -1199,55 +1199,57 @@ const MessageItem = React.memo(({
     }
   }, [isEditing]);
 
-  const gesture = useGesture(
-    {
-      // @ts-ignore - Suppressing for now as the type definition seems to incorrectly omit this valid handler.
-      onLongPress: () => {
-        if (isMobileView && !isSelectModeActive) {
-          handleToggleSelectMessage(msg.id);
-        }
-      },
-      onDrag: ({ active, movement: [mx, my], last, down, event }) => {
-        // This is a vertical scroll, let the browser handle it and do nothing.
-        if (Math.abs(my) > Math.abs(mx)) return;
-
-        // This is a horizontal swipe, so prevent the page from scrolling.
-        event.preventDefault();
-        
-        if (isMobileView && !isSelectModeActive && messageRowRef.current) {
-          if (last) {
-            if (mx > 70) {
-              handleSetReply(msg);
-            }
-            messageRowRef.current.style.transform = 'translateX(0px)';
-            messageRowRef.current.style.transition = 'transform 0.2s ease-out';
-          } else if (down) {
-            let newX = active ? mx : 0;
-            if (newX < 0) newX = 0;
-            if (newX > 80) newX = 80;
-            messageRowRef.current.style.transform = `translateX(${newX}px)`;
-            messageRowRef.current.style.transition = 'none';
-          }
-        }
-      },
-      onClick: () => {
-        if (isSelectModeActive) {
-          handleToggleSelectMessage(msg.id);
-        }
-      },
-    },
-    {
-      longPress: { enabled: true, delay: 500 },
-      drag: {
-        filterTaps: true,
-        eventOptions: { passive: false },
-        threshold: 10,
-      },
+  useDrag(({ active, movement: [mx, my], last, tap }) => {
+    if (tap) {
+      // If this 'tap' is the end of a long press, reset the flag and do nothing.
+      if (wasLongPressed.current) {
+        wasLongPressed.current = false;
+        return;
+      }
+      // Otherwise, if it's a genuine tap in select mode, toggle the selection.
+      if (isSelectModeActive) {
+        handleToggleSelectMessage(msg.id);
+        return;
+      }
     }
-  );
+    
+    // If a drag gesture is active (i.e., user is scrolling), always cancel the long-press-to-select timer.
+    if (active && longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    // Only perform swipe-to-reply logic for horizontal swipes, not vertical scrolls.
+    if (isMobileView && !isSelectModeActive && messageRowRef.current && Math.abs(mx) > Math.abs(my)) {
+      if (last) {
+        // If the drag was far enough, trigger the reply action.
+        if (mx > 70) {
+          handleSetReply(msg);
+        }
+        // Animate the message back to its original position.
+        messageRowRef.current.style.transform = 'translateX(0px)';
+        messageRowRef.current.style.transition = 'transform 0.2s ease-out';
+      } else {
+        // During the drag, update the position.
+        let newX = active ? mx : 0;
+        if (newX < 0) newX = 0; // Prevent dragging left.
+        if (newX > 80) newX = 80; // Cap the drag distance to 80px.
+
+        messageRowRef.current.style.transform = `translateX(${newX}px)`;
+        messageRowRef.current.style.transition = 'none';
+      }
+    }
+  }, { 
+    filterTaps: true, 
+    eventOptions: { passive: true }, 
+    target: messageRowRef,
+    drag: { threshold: 10 }
+  });
   
   const currentUserReaction = getReactionByUserId(msg.id, currentUserId);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reactButtonRef = useRef<HTMLButtonElement>(null!);
+  const wasLongPressed = useRef(false);
   const sender = msg.userId === currentUserId ? 'me' : 'other';
   const [isMessageBubbleHovered, setIsMessageBubbleHovered] = useState(false);
 
@@ -1256,6 +1258,22 @@ const MessageItem = React.memo(({
   const canDeleteForEveryone = (now - messageTime) < 30 * 60 * 1000;
   const canEdit = msg.userId === currentUserId && (now - messageTime) < 15 * 60 * 1000 && msg.text;
   const isDeleted = msg.isDeleted;
+
+  const handleLongPressStart = () => {
+    longPressTimerRef.current = setTimeout(() => {
+      if (isMobileView) {
+        handleToggleSelectMessage(msg.id);
+        wasLongPressed.current = true;
+      }
+    }, 500);
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1271,7 +1289,6 @@ const MessageItem = React.memo(({
     <MessageRow
       id={`message-${msg.id}`}
       ref={messageRowRef}
-      {...gesture()}
       $sender={sender}
       $isSelected={isSelected}
       $isActiveDeleteMenu={activeDeleteMenu === msg.id}
@@ -1281,6 +1298,10 @@ const MessageItem = React.memo(({
           handleSetReply(msg);
         }
       }}
+      onMouseDown={handleLongPressStart}
+      onMouseUp={handleLongPressEnd}
+      onTouchStart={handleLongPressStart}
+      onTouchEnd={handleLongPressEnd}
     >
       {isSelectModeActive && (
         <SelectCheckboxContainer onClick={(e) => { e.stopPropagation(); handleToggleSelectMessage(msg.id); }}>
@@ -1355,11 +1376,11 @@ const MessageItem = React.memo(({
               {selectedMessages[0] === msg.id && selectedMessages.length === 1 && (
                 <MobileReactionPicker 
                   $sender={sender}
-                  onClick={e => e.stopPropagation()}
+                  onMouseDown={e => e.stopPropagation()}
                   onTouchStart={e => e.stopPropagation()}
                 >
                   {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
-                    <ReactionEmoji key={emoji} onClick={() => {
+                    <ReactionEmoji key={emoji} onMouseDown={() => {
                       handleReact(msg.id, emoji);
                       handleCancelSelectMode();
                     }}>{emoji}</ReactionEmoji>
