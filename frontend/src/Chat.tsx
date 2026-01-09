@@ -1385,18 +1385,21 @@ const MessageItem = React.memo(({
                   className="mobile-reaction-picker"
                 >
                   {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
-                    <ReactionEmoji key={emoji} onClick={() => {
+                    <ReactionEmoji key={emoji} onClick={(e) => {
+                      e.stopPropagation();
                       handleReact(msg.id, emoji);
                       handleCancelSelectMode();
                     }}>{emoji}</ReactionEmoji>
                   ))}
                   {currentUserReaction ? (
-                    <ReactionEmoji onClick={() => { 
+                    <ReactionEmoji onClick={(e) => { 
+                      e.stopPropagation();
                       handleReact(msg.id, currentUserReaction); 
                       handleCancelSelectMode(); 
                     }}>{currentUserReaction}</ReactionEmoji>
                   ) : (
                     <ReactionEmoji $isPlusIcon={true} onClick={(e) => {
+                      e.stopPropagation();
                       handleOpenFullEmojiPicker(e.currentTarget.getBoundingClientRect(), msg.id);
                     }}>+</ReactionEmoji>
                   )}
@@ -2242,12 +2245,12 @@ function Chat() {
           })()}
         >
           {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
-            <ReactionEmoji key={emoji} onClick={() => handleReact(reactionPickerData.messageId, emoji)}>{emoji}</ReactionEmoji>
+            <ReactionEmoji key={emoji} onClick={(e) => { e.stopPropagation(); handleReact(reactionPickerData.messageId, emoji); }}>{emoji}</ReactionEmoji>
           ))}
           {currentUserReaction ? (
-            <ReactionEmoji onClick={() => handleReact(reactionPickerData!.messageId, currentUserReaction)}>{currentUserReaction}</ReactionEmoji>
+            <ReactionEmoji onClick={(e) => { e.stopPropagation(); handleReact(reactionPickerData!.messageId, currentUserReaction); }}>{currentUserReaction}</ReactionEmoji>
           ) : (
-            <ReactionEmoji $isPlusIcon={true} onClick={(e) => handleOpenFullEmojiPicker(e.currentTarget.getBoundingClientRect(), reactionPickerData!.messageId)}>+</ReactionEmoji>
+            <ReactionEmoji $isPlusIcon={true} onClick={(e) => { e.stopPropagation(); handleOpenFullEmojiPicker(e.currentTarget.getBoundingClientRect(), reactionPickerData!.messageId); }}>+</ReactionEmoji>
           )}
         </ReactionPicker>
       )}
