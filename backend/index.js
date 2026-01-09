@@ -356,38 +356,45 @@ broadcastToAdmins('user_joined', { userId, username });
       case 'react': {
         const { messageId, userId, emoji } = parsedMessage;
         const username = onlineUsers.get(userId)?.username || 'Unknown';
-        const message = await Message.findOne({ id: messageId });
+        // By using .lean(), we get a plain JavaScript object instead of a Mongoose document.
+        // This prevents errors where Mongoose-specific types don't have standard array methods.
+        const message = await Message.findOne({ id: messageId }).lean();
 
         if (message) {
-          if (!message.reactions) {
+          // Ensure reactions is a plain object.
+          if (!message.reactions || typeof message.reactions !== 'object') {
             message.reactions = {};
           }
 
           let previousEmoji = null;
           // Find and remove any previous reaction from this user
           for (const e in message.reactions) {
-            const userIndex = message.reactions[e].findIndex(u => u.userId === userId);
-            if (userIndex > -1) {
-              previousEmoji = e;
-              message.reactions[e].splice(userIndex, 1);
-              if (message.reactions[e].length === 0) {
-                delete message.reactions[e];
+            // Defensive check to ensure we're working with an array, preventing crashes from bad data.
+            if (Array.isArray(message.reactions[e])) {
+              const userIndex = message.reactions[e].findIndex(u => u.userId === userId);
+              if (userIndex > -1) {
+                previousEmoji = e;
+                message.reactions[e].splice(userIndex, 1);
+                if (message.reactions[e].length === 0) {
+                  delete message.reactions[e];
+                }
+                break; // A user can only have one reaction, so we can stop.
               }
-              break; // A user can only have one reaction, so we can stop.
             }
           }
 
           // If the new reaction is not a toggle-off of the same emoji, add it.
           if (previousEmoji !== emoji) {
-            if (!message.reactions[emoji]) {
+            if (!Array.isArray(message.reactions[emoji])) {
               message.reactions[emoji] = [];
             }
             message.reactions[emoji].push({ userId, username });
           }
           
+          // Atomically update the reactions in the database.
           await Message.updateOne({ id: messageId }, { $set: { reactions: message.reactions } });
 
-          // Broadcast the update
+          // Broadcast the update to all clients
           wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({ type: 'update', data: { id: messageId, reactions: message.reactions } }));
