@@ -16,6 +16,19 @@ const Message = require('./models/message');
 const MessageEvent = require('./models/messageEvent');
 
 
+// --- Global Error Handlers (Safety Net) ---
+// These are crucial for logging errors that would otherwise crash the server silently.
+process.on('uncaughtException', (err, origin) => {
+    logger.error('----- UNCAUGHT EXCEPTION -----');
+    logger.error(`Caught exception: ${err}\n` + `Exception origin: ${origin}`);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    logger.error('----- UNHANDLED REJECTION -----');
+    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+
 // --- In-Memory Stores (For live data, not for persistence) ---
 // messageHistory cache is removed to support infinite scroll. DB is now the source of truth.
 const onlineUsers = new Map();
@@ -123,6 +136,11 @@ const adminAuth = (req, res, next) => {
 };
 
 // --- Main Routes ---
+app.get('/health', (req, res) => {
+    // A simple health check endpoint for the hosting platform (Azure) to ping.
+    res.status(200).send('OK');
+});
+
 app.get('/', (req, res) => res.send('Pulse Chat Server is running!'));
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
