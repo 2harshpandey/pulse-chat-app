@@ -327,9 +327,6 @@ const MediaContent = styled.div`
   }
   p + img, p + video { margin-top: 0.5rem; }
 `;
-const UploadingOverlay = styled.div`
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255,255,255,0.8); color: #2d3748; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: bold; z-index: 100;
-`;
 const ConfirmationButton = styled.button`
   padding: 0.5rem 1rem;
   border: none;
@@ -445,11 +442,6 @@ const EmojiButton = styled(SendButton)`
     transform: scale(1.1);
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
-`;
-const GifPickerButton = styled(SendButton)`
-  background-color: #e2e8f0;
-  color: #4a5568;
-  &:hover { background-color: #cbd5e0; }
 `;
 const GifPickerModal = styled.div`
   position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 50;
@@ -862,18 +854,6 @@ const ReactionUserRow = styled.div`
   font-size: 1rem;
 `;
 
-const RemoveReactionButton = styled.span`
-
-  font-size: 0.8rem;
-
-  color: #a0aec0;
-
-  cursor: pointer;
-
-  &:hover { color: #EF4444; }
-
-`;
-
 const ReactionEmojiSpan = styled.span`
   font-size: 15px;
   margin-right: -4px; /* Overlap emojis slightly */
@@ -941,12 +921,6 @@ const SelectModeFooter = styled.div`
   padding: 0.75rem 1rem;
   background-color: white;
   border-top: 1px solid #e2e8f0;
-`;
-
-const SelectionCounter = styled.p`
-  font-weight: bold;
-  font-size: 1rem;
-  color: #2d3748;
 `;
 
 const DeleteButton = styled(SendButton)`
@@ -1274,7 +1248,6 @@ const MessageItem = React.memo(({
 
   const messageTime = new Date(msg.timestamp).getTime();
   const now = new Date().getTime();
-  const canDeleteForEveryone = (now - messageTime) < 30 * 60 * 1000;
   const canEdit = msg.userId === currentUserId && (now - messageTime) < 15 * 60 * 1000 && msg.text;
   const isDeleted = msg.isDeleted;
 
@@ -1583,13 +1556,11 @@ function Chat() {
   const [isLoadingGifs, setIsLoadingGifs] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<UserProfile[]>([]);
   const [isUserListVisible, setIsUserListVisible] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [isAttachmentMenuVisible, setIsAttachmentMenuVisible] = useState(false);
   const [isSelectModeActive, setIsSelectModeActive] = useState(false);
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const [isDeleteConfirmationVisible, setIsDeleteConfirmationVisible] = useState(false);
-  const [canDeleteForEveryone, setCanDeleteForEveryone] = useState(false);
   const [fullEmojiPickerPosition, setFullEmojiPickerPosition] = useState<DOMRect | null>(null);
   const [isMobileView, setIsMobileView] = useState(window.innerWidth <= 768);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -1989,11 +1960,6 @@ function Chat() {
     handleCancelSelectMode();
   };
 
-  const handleBulkDeleteForEveryone = () => {
-    setIsDeleteConfirmationVisible(false);
-    handleCancelSelectMode();
-  };
-
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && isSelectModeActive && !isMobileView) {
@@ -2013,16 +1979,10 @@ function Chat() {
     const allMessagesAreMine = selectedMessageObjects.every(msg => msg.userId === userIdRef.current);
 
     if (!allMessagesAreMine) {
-      setCanDeleteForEveryone(false);
       setIsDeleteConfirmationVisible(true);
       return;
     }
 
-    const timeLimit = 15 * 60 * 1000; // 15 minutes
-    const now = new Date().getTime();
-    const allMessagesAreRecent = selectedMessageObjects.every(msg => (now - new Date(msg.timestamp).getTime()) < timeLimit);
-
-    setCanDeleteForEveryone(allMessagesAreRecent);
     setIsDeleteConfirmationVisible(true);
   };
 
@@ -2224,8 +2184,7 @@ function Chat() {
           ref={emojiPickerRef}
           style={(() => {
             const pickerWidth = 350; // Default width of the emoji picker
-            const pickerHeight = 450; // Default height of the emoji picker
-            let top = emojiPickerPosition.top - pickerHeight;
+            let top = emojiPickerPosition.top - 450;
             let left = emojiPickerPosition.left;
 
             if (top < 0) {
@@ -2251,7 +2210,6 @@ function Chat() {
           ref={emojiPickerRef}
           style={(() => {
             const pickerWidth = 350; // Default width of the emoji picker
-            const pickerHeight = 450; // Default height of the emoji picker
             let top = fullEmojiPickerPosition.bottom + 10;
             let left = fullEmojiPickerPosition.left;
 
@@ -2325,9 +2283,6 @@ function Chat() {
             <div>
               <ConfirmationButton className="cancel" onClick={() => setIsDeleteConfirmationVisible(false)}>Cancel</ConfirmationButton>
               <ConfirmationButton className="delete" onClick={handleBulkDeleteForMe}>Delete for me</ConfirmationButton>
-              {canDeleteForEveryone && (
-                <ConfirmationButton className="delete" onClick={handleBulkDeleteForEveryone}>Delete for everyone</ConfirmationButton>
-              )}
             </div>
           </ConfirmationContent>
         </ConfirmationModal>
