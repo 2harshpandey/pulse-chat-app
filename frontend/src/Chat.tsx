@@ -1027,9 +1027,22 @@ const MessageText = styled.p`
   }
 `;
 
+const SystemMessage = styled.div`
+  align-self: center;
+  background-color: #e9ecef;
+  color: #495057;
+  padding: 0.5rem 1rem;
+  border-radius: 1.25rem;
+  font-size: 0.9rem;
+  margin: 0.5rem 0;
+  width: fit-content;
+  text-align: center;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+`;
+
 // --- INTERFACES ---
 interface ReplyContext { id: string; username: string; text: string; type: 'text' | 'image' | 'video'; }
-interface Message { id: string; userId: string; username: string; type: 'text' | 'image' | 'video'; text?: string; url?: string; originalName?: string; timestamp: string; reactions?: { [emoji: string]: { userId: string, username: string }[] }; edited?: boolean; replyingTo?: ReplyContext; isDeleted?: boolean; isUploading?: boolean; uploadError?: boolean; }
+interface Message { id: string; userId: string; username: string; type: 'text' | 'image' | 'video' | 'system_notification'; text?: string; url?: string; originalName?: string; timestamp: string; reactions?: { [emoji: string]: { userId: string, username: string }[] }; edited?: boolean; replyingTo?: ReplyContext; isDeleted?: boolean; isUploading?: boolean; uploadError?: boolean; }
 interface Gif { id: string; preview: string; url: string; }
 
 // --- CHILD COMPONENTS ---
@@ -1769,6 +1782,12 @@ function Chat() {
     const tempId = Date.now().toString();
     let replyContext: ReplyContext | undefined = undefined;
     if (replyingTo) {
+      const { type } = replyingTo;
+      if (type === 'system_notification') {
+        setReplyingTo(null);
+        return;
+      }
+
       let replyText = replyingTo.text || 'Message';
       if (!replyingTo.text) {
         if (replyingTo.url?.includes('tenor.com')) {
@@ -1779,7 +1798,7 @@ function Chat() {
           replyText = 'Video';
         }
       }
-      replyContext = { id: replyingTo.id, username: replyingTo.username, text: replyText, type: replyingTo.type };
+      replyContext = { id: replyingTo.id, username: replyingTo.username, text: replyText, type };
     }
 
     if (stagedFile) {
@@ -1902,7 +1921,10 @@ function Chat() {
     setActiveDeleteMenu(null);
   };
   const handleTyping = () => { if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return; if (!typingTimeoutRef.current) { ws.current.send(JSON.stringify({ type: 'start_typing' })); } if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = setTimeout(() => { ws.current?.send(JSON.stringify({ type: 'stop_typing' })); typingTimeoutRef.current = null; }, 2000); };
-  const handleSetReply = (message: Message) => { setReplyingTo(message); };
+  const handleSetReply = (message: Message) => {
+    if (message.type === 'system_notification') return;
+    setReplyingTo(message);
+  };
   const handleReact = (messageId: string, emoji: string) => { if (!ws.current || !userContext?.profile) return; const reactionMessage = { type: 'react', messageId, userId: userIdRef.current, emoji }; ws.current.send(JSON.stringify(reactionMessage)); setReactionPickerData(null); };
   const handleOpenReactionPicker = (messageId: string, rect: DOMRect, sender: 'me' | 'other') => {
     if (reactionPickerData?.messageId === messageId) {
@@ -2324,45 +2346,50 @@ function Chat() {
             </MobileUserListToggle>
       </Header>
         <LayoutContainer>
-          <ChatWindow>
-            <MessagesContainer ref={chatContainerRef} onScroll={handleScroll} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
-              {messages.map((msg: Message) => (
-                <MessageItem
-                  key={msg.id}
-                  msg={msg}
-                  currentUserId={userIdRef.current}
-                  handleSetReply={handleSetReply}
-                  handleReact={handleReact}
-                  openDeleteMenu={openDeleteMenu}
-                  setLightboxUrl={setLightboxUrl}
-                  activeDeleteMenu={activeDeleteMenu}
-                  deleteMenuRef={deleteMenuRef}
-                  deleteForMe={deleteForMe}
-                  deleteForEveryone={deleteForEveryone}
-                  scrollToMessage={scrollToMessage}
-                  isSelectModeActive={isSelectModeActive}
-                  isSelected={selectedMessages.includes(msg.id)}
-                  handleToggleSelectMessage={handleToggleSelectMessage}
-                  setActiveDeleteMenu={setActiveDeleteMenu}
-                  handleCopy={handleCopy}
-                  handleStartEdit={handleStartEdit}
-                  handleCancelSelectMode={handleCancelSelectMode}
-                  isMobileView={isMobileView}
-                  selectedMessages={selectedMessages}
-                  onOpenReactionPicker={handleOpenReactionPicker}
-                  setReactionsPopup={setReactionsPopup}
-                  handleOpenFullEmojiPicker={handleOpenFullEmojiPicker}
-                  getReactionByUserId={getReactionByUserId}
-                  reactionPickerData={reactionPickerData}
-                  editingMessageId={editingMessageId}
-                  editingText={editingText}
-                  setEditingText={setEditingText}
-                  handleSaveEdit={handleSaveEdit}
-                  handleCancelEdit={handleCancelEdit}
-                />
-              ))}
-              <div ref={chatEndRef} />
-            </MessagesContainer>
+                    <ChatWindow>
+                      <MessagesContainer ref={chatContainerRef} onScroll={handleScroll} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
+                        {messages.map((msg: Message) => {
+                          if (msg.type === 'system_notification') {
+                            return <SystemMessage key={msg.id}>{msg.text}</SystemMessage>;
+                          }
+                          return (
+                            <MessageItem
+                              key={msg.id}
+                              msg={msg}
+                              currentUserId={userIdRef.current}
+                              handleSetReply={handleSetReply}
+                              handleReact={handleReact}
+                              openDeleteMenu={openDeleteMenu}
+                              setLightboxUrl={setLightboxUrl}
+                              activeDeleteMenu={activeDeleteMenu}
+                              deleteMenuRef={deleteMenuRef}
+                              deleteForMe={deleteForMe}
+                              deleteForEveryone={deleteForEveryone}
+                              scrollToMessage={scrollToMessage}
+                              isSelectModeActive={isSelectModeActive}
+                              isSelected={selectedMessages.includes(msg.id)}
+                              handleToggleSelectMessage={handleToggleSelectMessage}
+                              setActiveDeleteMenu={setActiveDeleteMenu}
+                              handleCopy={handleCopy}
+                              handleStartEdit={handleStartEdit}
+                              handleCancelSelectMode={handleCancelSelectMode}
+                              isMobileView={isMobileView}
+                              selectedMessages={selectedMessages}
+                              onOpenReactionPicker={handleOpenReactionPicker}
+                              setReactionsPopup={setReactionsPopup}
+                              handleOpenFullEmojiPicker={handleOpenFullEmojiPicker}
+                              getReactionByUserId={getReactionByUserId}
+                              reactionPickerData={reactionPickerData}
+                              editingMessageId={editingMessageId}
+                              editingText={editingText}
+                              setEditingText={setEditingText}
+                              handleSaveEdit={handleSaveEdit}
+                              handleCancelEdit={handleCancelEdit}
+                            />
+                          );
+                        })}
+                        <div ref={chatEndRef} />
+                      </MessagesContainer>
             <ScrollToBottomButton $isVisible={isScrollToBottomVisible} onClick={scrollToBottom}>
               <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 5v14"></path>
