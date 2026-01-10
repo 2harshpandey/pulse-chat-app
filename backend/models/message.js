@@ -17,6 +17,7 @@ const messageSchema = new mongoose.Schema({
   url: { type: String },
   originalName: { type: String },
   isDeleted: { type: Boolean, default: false },
+  deletedBy: { type: String, default: null },
   edited: { type: Boolean, default: false },
   replyingTo: {
     type: Object,

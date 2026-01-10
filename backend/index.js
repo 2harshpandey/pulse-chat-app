@@ -477,47 +477,54 @@ broadcastToAdmins('user_joined', { userId, username });
       }
       case 'delete_for_everyone': {
         const { messageId } = parsedMessage;
-        
-        const msgIndex = messageHistory.findIndex(m => m.id === messageId);
-        if (msgIndex === -1) return;
-        const originalMessage = { ...messageHistory[msgIndex] };
 
-        // Update in DB
-        Message.updateOne({ id: messageId }, { $set: { isDeleted: true, text: undefined, url: undefined, originalName: undefined, reactions: undefined } })
-          .catch(err => logger.error('Failed to delete message:', err));
+        try {
+            const originalMessage = await Message.findOne({ id: messageId }).lean();
+            if (!originalMessage) return;
 
-        // Update in-memory cache
-        messageHistory[msgIndex] = {
-            id: originalMessage.id,
-            userId: originalMessage.userId,
-            username: originalMessage.username,
-            userColor: originalMessage.userColor,
-            sender: originalMessage.sender,
-            timestamp: originalMessage.timestamp,
-            isDeleted: true,
-        };
-        
-        User.findOne({ userId: ws.userId }).then(user => {
-          const username = user ? user.username : 'Unknown';
-          const event = new MessageEvent({
-            type: 'delete_everyone',
-            messageId,
-            deletedContent: originalMessage,
-            userId: ws.userId,
-            username,
-            timestamp: new Date().toISOString(),
-          });
-          event.save();
-          broadcastToAdmins('history', event);
-          broadcastToAdmins('activity', `Message (ID: ${messageId}) deleted by '${username}'.`);
-        });
-        
-        const updateMsg = { type: 'update', data: messageHistory[msgIndex] };
-        wss.clients.forEach(c => {
-            if (c.readyState === WebSocket.OPEN) {
-                c.send(JSON.stringify(updateMsg));
-            }
-        });
+            const updatedMessage = await Message.findOneAndUpdate(
+                { id: messageId },
+                { 
+                    $set: { 
+                        text: undefined, 
+                        url: undefined, 
+                        originalName: undefined, 
+                        reactions: undefined,
+                        isDeleted: true,
+                        deletedBy: ws.userId 
+                    },
+                    $unset: {
+                        replyingTo: ""
+                    }
+                },
+                { new: true }
+            ).lean();
+            
+            User.findOne({ userId: ws.userId }).then(user => {
+              const username = user ? user.username : 'Unknown';
+              const event = new MessageEvent({
+                type: 'delete_everyone',
+                messageId,
+                deletedContent: originalMessage,
+                userId: ws.userId,
+                username,
+                timestamp: new Date().toISOString(),
+              });
+              event.save();
+              broadcastToAdmins('history', event);
+              broadcastToAdmins('activity', `Message (ID: ${messageId}) deleted by '${username}'.`);
+            });
+            
+            const updateMsg = { type: 'update', data: updatedMessage };
+            wss.clients.forEach(c => {
+                if (c.readyState === WebSocket.OPEN) {
+                    c.send(JSON.stringify(updateMsg));
+                }
+            });
+
+        } catch (err) {
+            logger.error('Failed to delete message for everyone:', err);
+        }
         break;
       }
       default: { // New text/media message
