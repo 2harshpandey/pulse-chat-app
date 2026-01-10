@@ -34,6 +34,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const onlineUsers = new Map();
 const typingUsers = new Map();
 const adminClients = new Set();
+const pendingDisconnects = new Map();
 
 // --- Cloudinary & Multer Configuration ---
 cloudinary.config({
@@ -349,30 +350,33 @@ wss.on('connection', (ws, req) => {
       case 'user_join': {
         const { userId, username } = parsedMessage;
         ws.userId = userId;
-        onlineUsers.set(userId, { userId, username });
-        console.log('Online users:', Array.from(onlineUsers.values()));
+
+        if (pendingDisconnects.has(userId)) {
+            clearTimeout(pendingDisconnects.get(userId));
+            pendingDisconnects.delete(userId);
+            logger.info(`User '${username}' rejoined (refresh).`);
+        } else {
+            logger.info(`User '${username}' joined.`);
+            broadcast({
+              type: 'system_notification',
+              id: `system-${Date.now()}`,
+              text: `${username} has joined the chat.`,
+              timestamp: new Date().toISOString(),
+            });
+        }
         
-        // Find or create user in DB
+        onlineUsers.set(userId, { userId, username });
+        
         User.findOneAndUpdate(
           { userId },
-          { userId, username },
+          { userId, username, lastSeen: new Date() },
           { upsert: true, new: true }
         ).catch(err => logger.error('Failed to save user:', err));
 
-        logger.info(`User '${username}' joined.`);
-broadcastToAdmins('user_joined', { userId, username });
+        broadcastToAdmins('user_joined', { userId, username });
         broadcastToAdmins('activity', `User '${username}' connected.`);
         broadcastOnlineUsers();
 
-        // Broadcast a temporary system message to all clients
-        broadcast({
-          type: 'system_notification',
-          id: `system-${Date.now()}`,
-          text: `${username} has joined the chat.`,
-          timestamp: new Date().toISOString(),
-        });
-
-        // Send the last 50 messages as the initial history
         Message.find().sort({ createdAt: -1 }).limit(50).lean()
           .then(messages => {
             ws.send(JSON.stringify({ type: 'history', data: messages.reverse() }));
@@ -566,16 +570,28 @@ broadcastToAdmins('user_joined', { userId, username });
 
   ws.on('close', () => {
     if (ws.userId && onlineUsers.has(ws.userId)) {
-      User.findOne({ userId: ws.userId }).then(user => {
-        const username = user ? user.username : 'Unknown';
-        logger.info(`[A] User '${username}' disconnected.`);
-        broadcastToAdmins('activity', `User '${username}' disconnected.`);
-        logger.info(`[B] Disconnect broadcast sent for user '${username}'.`);
-      });
-onlineUsers.delete(ws.userId);
-      typingUsers.delete(ws.userId);
-      broadcastOnlineUsers();
-      broadcastToAdmins('user_left', { userId: ws.userId });
+      const user = onlineUsers.get(ws.userId);
+      logger.info(`User '${user.username}' disconnected. Starting 10s timer.`);
+      
+      const timerId = setTimeout(() => {
+        logger.info(`User '${user.username}' truly left.`);
+        onlineUsers.delete(ws.userId);
+        typingUsers.delete(ws.userId);
+
+        broadcast({
+          type: 'system_notification',
+          id: `system-${Date.now()}`,
+          text: `${user.username} has left the chat.`,
+          timestamp: new Date().toISOString(),
+        });
+        
+        broadcastOnlineUsers();
+        broadcastToAdmins('user_left', { userId: ws.userId });
+        broadcastToAdmins('activity', `User '${user.username}' disconnected.`);
+        pendingDisconnects.delete(ws.userId);
+      }, 10000);
+
+      pendingDisconnects.set(ws.userId, timerId);
     }
   });
   ws.on('error', (error) => logger.error('WebSocket Error:', { message: error.message }));
