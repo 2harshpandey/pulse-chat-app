@@ -1016,7 +1016,7 @@ const SystemMessage = styled.div`
 
 // --- INTERFACES ---
 interface ReplyContext { id: string; username: string; text: string; type: 'text' | 'image' | 'video'; }
-interface Message { id: string; userId: string; username: string; type: 'text' | 'image' | 'video' | 'system_notification'; text?: string; url?: string; originalName?: string; timestamp: string; reactions?: { [emoji: string]: { userId: string, username: string }[] }; edited?: boolean; replyingTo?: ReplyContext; isDeleted?: boolean; isUploading?: boolean; uploadError?: boolean; }
+interface Message { id: string; userId: string; username: string; type: 'text' | 'image' | 'video' | 'system_notification'; text?: string; url?: string; originalName?: string; timestamp: string; reactions?: { [emoji: string]: { userId: string, username: string }[] }; edited?: boolean; replyingTo?: ReplyContext; isDeleted?: boolean; deletedBy?: string; isUploading?: boolean; uploadError?: boolean; }
 interface Gif { id: string; preview: string; url: string; }
 
 // --- CHILD COMPONENTS ---
@@ -1314,7 +1314,7 @@ const MessageItem = React.memo(({
         >
           {isDeleted ? (
             <MessageText style={{ fontStyle: 'italic', color: sender === 'me' ? '#bfdbfe' : '#a0aec0' }}>
-              This message was deleted
+              {msg.deletedBy === currentUserId ? 'You deleted this message' : 'This message has been deleted'}
             </MessageText>
           ) : isEditing ? (
             msg.url ? (
