@@ -1570,11 +1570,18 @@ function Chat() {
 
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
-      if (lightboxUrl) {
-        setLightboxUrl(null);
-      }
       if (isDeleteConfirmationVisible) {
         setIsDeleteConfirmationVisible(false);
+        return;
+      }
+      if (isSelectModeActive) {
+        setIsSelectModeActive(false);
+        setSelectedMessages([]);
+        return;
+      }
+      if (lightboxUrl) {
+        setLightboxUrl(null);
+        return;
       }
     };
 
@@ -1583,7 +1590,7 @@ function Chat() {
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [lightboxUrl, isDeleteConfirmationVisible]);
+  }, [lightboxUrl, isDeleteConfirmationVisible, isSelectModeActive]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -1958,24 +1965,25 @@ function Chat() {
         ? prevSelected.filter(id => id !== messageId)
         : [...prevSelected, messageId];
 
-          if (newSelected.length === 0) {
-            setIsSelectModeActive(false);
-          } else {
-            setIsSelectModeActive(true);
-          }
-      
-          return newSelected;
-        });
-      };
+      if (newSelected.length === 0) {
+        setIsSelectModeActive(false);
+      } else {
+        if (prevSelected.length === 0) { // First item selected
+          window.history.pushState({ selectMode: true }, '');
+        }
+        setIsSelectModeActive(true);
+      }
+
+      return newSelected;
+    });
+  };
       
   const handleCancelSelectMode = () => {
-    setIsSelectModeActive(false);
-    setSelectedMessages([]);
+    window.history.back();
   };
   const handleBulkDeleteForMe = () => {
     selectedMessages.forEach(id => deleteForMe(id));
-    setIsDeleteConfirmationVisible(false);
-    handleCancelSelectMode();
+    window.history.go(-2);
   };
 
   const handleBulkDeleteForEveryone = () => {
@@ -1984,8 +1992,7 @@ function Chat() {
         ws.current.send(JSON.stringify({ type: 'delete_for_everyone', messageId: id }));
       }
     });
-    setIsDeleteConfirmationVisible(false);
-    handleCancelSelectMode();
+    window.history.go(-2);
   };
 
   useEffect(() => {
@@ -2425,7 +2432,7 @@ function Chat() {
         <Footer>
           {isSelectModeActive ? (
             <SelectModeFooter>
-              <CancelPreviewButton onClick={handleCancelSelectMode}>&times;</CancelPreviewButton>
+              <CancelPreviewButton onClick={() => window.history.back()}>&times;</CancelPreviewButton>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                 {canEditSelectedMessage && (
                   <EditButton onClick={() => {
