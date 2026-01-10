@@ -363,6 +363,15 @@ wss.on('connection', (ws, req) => {
 broadcastToAdmins('user_joined', { userId, username });
         broadcastToAdmins('activity', `User '${username}' connected.`);
         broadcastOnlineUsers();
+
+        // Broadcast a temporary system message to all clients
+        broadcast({
+          type: 'system_notification',
+          id: `system-${Date.now()}`,
+          text: `${username} has joined the chat.`,
+          timestamp: new Date().toISOString(),
+        });
+
         // Send the last 50 messages as the initial history
         Message.find().sort({ createdAt: -1 }).limit(50).lean()
           .then(messages => {
