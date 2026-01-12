@@ -1573,6 +1573,8 @@ function Chat() {
   const deleteMenuRef = useRef<HTMLDivElement>(null!);
   const gifPickerRef = useRef<HTMLDivElement>(null!);
   const attachmentMenuRef = useRef<HTMLDivElement>(null!);
+  const attachmentButtonRef = useRef<HTMLButtonElement>(null!);
+  const emojiPickerRef = useRef<HTMLDivElement>(null!);
   const emojiButtonRef = useRef<HTMLButtonElement>(null!);
   const messageInputRef = useRef<HTMLTextAreaElement>(null!);
   const userIdRef = useRef<string>(getUserId());
@@ -1592,12 +1594,9 @@ function Chat() {
     const handlePopState = (event: PopStateEvent) => {
       const { isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl } = stateRef.current;
       
-      // Hierarchy of closing overlays: confirmation -> select mode -> lightbox
+      // Hierarchy of closing overlays: confirmation -> lightbox
       if (isDeleteConfirmationVisible) {
         setIsDeleteConfirmationVisible(false);
-      } else if (isSelectModeActive) {
-        setIsSelectModeActive(false);
-        setSelectedMessages([]);
       } else if (lightboxUrl) {
         setLightboxUrl(null);
       }
@@ -1634,7 +1633,11 @@ function Chat() {
     const handleClickOutside = (event: MouseEvent) => {
       if (deleteMenuRef.current && !deleteMenuRef.current.contains(event.target as Node)) setActiveDeleteMenu(null);
       if (gifPickerRef.current && !gifPickerRef.current.contains(event.target as Node)) setShowGifPicker(false);
-      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node)) setIsAttachmentMenuVisible(false);
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node) && !attachmentButtonRef.current?.contains(event.target as Node)) setIsAttachmentMenuVisible(false);
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node) && !emojiButtonRef.current?.contains(event.target as Node)) {
+        setEmojiPickerPosition(null);
+        setFullEmojiPickerPosition(null);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -1682,11 +1685,88 @@ function Chat() {
   };
 
   const handleSendMessage = async () => {
-    // (Implementation is complex and omitted for brevity, but assumed correct)
+    if (!stagedFile && !stagedGif && !inputMessage.trim()) return;
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !userContext?.profile) return;
+
+    const tempId = Date.now().toString();
+    let replyContext: ReplyContext | undefined = undefined;
+    if (replyingTo) {
+      const { type } = replyingTo;
+      if (type === 'system_notification') {
+        setReplyingTo(null);
+        return;
+      }
+
+      let replyText = replyingTo.text || 'Message';
+      if (!replyingTo.text) {
+        if (replyingTo.url?.includes('tenor.com')) {
+          replyText = 'GIF';
+        } else if (replyingTo.type === 'image') {
+          replyText = 'Image';
+        } else if (replyingTo.type === 'video') {
+          replyText = 'Video';
+        }
+      }
+      replyContext = { id: replyingTo.id, username: replyingTo.username, text: replyText, type };
+    }
+
+    if (stagedFile) {
+      const message: Message = {
+        id: tempId,
+        userId: userIdRef.current,
+        username: userContext.profile.username,
+        type: stagedFile.type.startsWith('image') ? 'image' : 'video',
+        url: URL.createObjectURL(stagedFile),
+        text: inputMessage,
+        timestamp: new Date().toISOString(),
+        replyingTo: replyContext,
+        isUploading: true,
+      };
+      setMessages(prev => [...prev, message]);
+      
+      const formData = new FormData();
+      formData.append('file', stagedFile);
+      formData.append('text', inputMessage);
+      formData.append('userId', userIdRef.current);
+
+      fetch(`${process.env.REACT_APP_API_URL}/api/upload`, { method: 'POST', body: formData })
+        .then(response => {
+          if (!response.ok) throw new Error('Upload failed');
+          return response.json();
+        })
+        .then(uploadedFileData => {
+          const finalMessage = { ...message, ...uploadedFileData, isUploading: false, id: uploadedFileData.id };
+          setMessages(prev => prev.map(m => m.id === tempId ? finalMessage : m));
+          ws.current?.send(JSON.stringify(finalMessage));
+        })
+        .catch(error => {
+          console.error('File upload failed!', error);
+          setMessages(prev => prev.map(m => m.id === tempId ? { ...message, isUploading: false, uploadError: true, text: 'Upload failed' } : m));
+        });
+
+      resetInput();
+
+    } else if (stagedGif) {
+      const gifMessage: Message = { id: stagedGif.id, userId: userIdRef.current, username: userContext.profile.username, type: 'image', url: stagedGif.url, text: inputMessage, timestamp: new Date().toISOString(), replyingTo: replyContext };
+      ws.current.send(JSON.stringify(gifMessage));
+      resetInput();
+    } else {
+      const textMessage: Message = { id: Date.now().toString(), userId: userIdRef.current, username: userContext.profile.username, type: 'text', text: inputMessage, timestamp: new Date().toISOString(), replyingTo: replyContext };
+      ws.current.send(JSON.stringify(textMessage));
+      resetInput();
+    }
   };
 
   const handleTyping = () => {
-    // (Implementation is complex and omitted for brevity, but assumed correct)
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
+    if (!typingTimeoutRef.current) {
+      ws.current.send(JSON.stringify({ type: 'start_typing' }));
+    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      ws.current?.send(JSON.stringify({ type: 'stop_typing' }));
+      typingTimeoutRef.current = null;
+    }, 2000);
   };
 
   const handleClearChat = () => {
@@ -1707,6 +1787,16 @@ function Chat() {
     setReactionPickerData(null);
   };
 
+  const deleteForMe = (messageId: string) => {
+    if (!ws.current) return;
+    ws.current.send(JSON.stringify({ type: 'delete_for_me', messageId }));
+  };
+
+  const deleteForEveryone = (messageId: string) => {
+    if (!ws.current) return;
+    ws.current.send(JSON.stringify({ type: 'delete_for_everyone', messageId }));
+  };
+
   const handleOpenReactionPicker = (messageId: string, rect: DOMRect, sender: 'me' | 'other') => {
     if (reactionPickerData?.messageId === messageId) {
       setReactionPickerData(null);
@@ -1714,6 +1804,8 @@ function Chat() {
       setReactionPickerData({ messageId, rect, sender });
     }
   };
+  
+  const reactionPickerRef = useRef<HTMLDivElement>(null!);
   
   // --- OVERLAY & HISTORY MANAGEMENT ---
 
@@ -1745,11 +1837,9 @@ function Chat() {
         : [...prevSelected, messageId];
 
       if (newSelected.length === 0) {
-        if (stateRef.current.isSelectModeActive) window.history.back();
         setIsSelectModeActive(false);
       } else if (prevSelected.length === 0) {
         setIsSelectModeActive(true);
-        window.history.pushState({ selectMode: true }, '');
       }
       
       return newSelected;
@@ -1757,16 +1847,14 @@ function Chat() {
   };
 
   const handleCancelSelectMode = () => {
-    if (stateRef.current.isSelectModeActive) {
-      window.history.back();
-    }
     setIsSelectModeActive(false);
     setSelectedMessages([]);
   };
 
   const handleBulkDeleteForMe = () => {
     setMessages(prev => prev.filter(m => !selectedMessages.includes(m.id)));
-    // Reset state directly
+    // Pop the history state, then reset UI state
+    window.history.back();
     setIsDeleteConfirmationVisible(false);
     setIsSelectModeActive(false);
     setSelectedMessages([]);
@@ -1778,14 +1866,61 @@ function Chat() {
         ws.current.send(JSON.stringify({ type: 'delete_for_everyone', messageId: id }));
       }
     });
-    // Reset state directly
+    // Pop the history state, then reset UI state
+    window.history.back();
     setIsDeleteConfirmationVisible(false);
     setIsSelectModeActive(false);
     setSelectedMessages([]);
   };
 
     const handleCopy = async (message: Message) => {
-        // (Implementation is complex and omitted for brevity)
+      console.log('Attempting to copy message:', message);
+      try {
+        if (message.type === 'text' && message.text) {
+          await navigator.clipboard.writeText(message.text);
+          console.log('Text copied to clipboard successfully.');
+        } else if ((message.type === 'image' || message.type === 'video') && message.url) {
+          console.log('Attempting to copy media (image/video):', message.url);
+          try {
+            const response = await fetch(message.url);
+            const blob = await response.blob();
+  
+            if (!blob.type.startsWith('image/')) {
+              await navigator.clipboard.writeText(message.url);
+              console.log('Copied URL for non-image type.');
+              return;
+            }
+  
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const img = await createImageBitmap(blob);
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx!.drawImage(img, 0, 0);
+  
+            canvas.toBlob(async (pngBlob) => {
+              if (pngBlob) {
+                try {
+                  await navigator.clipboard.write([
+                    new ClipboardItem({
+                      'image/png': pngBlob,
+                    }),
+                  ]);
+                  console.log('Image copied to clipboard as PNG successfully.');
+                } catch (copyErr) {
+                  console.error('PNG copy failed, falling back to URL:', copyErr);
+                  await navigator.clipboard.writeText(message.url!);
+                }
+              }
+            }, 'image/png');
+          } catch (e) {
+            console.error('Could not copy image, falling back to URL:', e);
+            await navigator.clipboard.writeText(message.url!);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to copy content: ', err);
+      }
     };
 
     const handleStartEdit = (message: Message) => {
@@ -1814,16 +1949,183 @@ function Chat() {
       handleCancelEdit();
     };
 
+    const getReactionByUserId = (messageId: string | undefined, userId: string): string | null => {
+    if (!messageId) return null;
+    const message = messages.find(m => m.id === messageId);
+    if (!message || !message.reactions) return null;
+
+    for (const emoji in message.reactions) {
+      if (message.reactions[emoji].some(r => r.userId === userId)) {
+        return emoji;
+      }
+    }
+    return null;
+  };
+
+  const handleScroll = () => {
+    const container = chatContainerRef.current;
+    if (container) {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isScrolledUp = (scrollHeight - scrollTop - clientHeight) > 20;
+      setIsScrollToBottomVisible(isScrolledUp);
+    }
+  };
+
+  const scrollToMessage = (messageId: string) => {
+    const element = document.getElementById(`message-${messageId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.style.transition = 'background-color 0.5s ease';
+      element.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+      setTimeout(() => {
+        element.style.backgroundColor = 'transparent';
+      }, 1500);
+    }
+  };
+  
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   // --- RENDER ---
   if (!userContext?.profile) { return <Auth onAuthSuccess={userContext!.login} />; }
 
   const selectedMessage = messages.find(msg => msg.id === selectedMessages[0]);
   const canEditSelectedMessage = selectedMessages.length === 1 && selectedMessage && selectedMessage.userId === userIdRef.current && selectedMessage.text && (new Date().getTime() - new Date(selectedMessage.timestamp).getTime()) < 15 * 60 * 1000;
 
+  const handleEmojiClick = (emojiData: EmojiClickData) => { setInputMessage(prev => prev + emojiData.emoji); };
+  const handleOpenEmojiPicker = (rect: DOMRect) => {
+    if (emojiPickerPosition) {
+      setEmojiPickerPosition(null);
+    } else {
+      setEmojiPickerPosition(rect);
+    }
+  };
+    const handleOpenFullEmojiPicker = (rect: DOMRect, messageId: string) => {
+    setFullEmojiPickerPosition(rect);
+    setMessageIdForFullEmojiPicker(messageId);
+    setReactionPickerData(null);
+    handleCancelSelectMode();
+  };
+    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputMessage(e.target.value);
+    handleTyping();
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+    if (textarea.scrollHeight > 120) {
+      textarea.style.overflowY = 'auto';
+    } else {
+      textarea.style.overflowY = 'hidden';
+    }
+  };
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => { if (event.target.files?.[0]) { setStagedFile(event.target.files[0]); setStagedGif(null); } };
+  const handleGifSelect = (gif: Gif) => { setStagedGif(gif); setStagedFile(null); setShowGifPicker(false); };
+
+
 
   return (
     <>
       <GlobalStyle />
+      {emojiPickerPosition && (
+        <div
+          ref={emojiPickerRef}
+          style={(() => {
+            const pickerWidth = 350; // Default width of the emoji picker
+            let top = emojiPickerPosition.top - 450;
+            let left = emojiPickerPosition.left;
+
+            if (top < 0) {
+              top = emojiPickerPosition.bottom + 10;
+            }
+
+            if (left + pickerWidth > window.innerWidth) {
+              left = window.innerWidth - pickerWidth - 10;
+            }
+
+            if (left < 0) {
+              left = 10;
+            }
+
+            return { position: 'absolute', top: `${top}px`, left: `${left}px`, zIndex: 21 };
+          })()}
+        >
+          <EmojiPicker onEmojiClick={handleEmojiClick} />
+        </div>
+      )}
+      {fullEmojiPickerPosition && (
+        <EmojiPickerWrapper
+          ref={emojiPickerRef}
+          style={(() => {
+            const pickerWidth = 350; // Default width of the emoji picker
+            let top = fullEmojiPickerPosition.bottom + 10;
+            let left = fullEmojiPickerPosition.left;
+
+            if (left + pickerWidth > window.innerWidth) {
+              left = window.innerWidth - pickerWidth - 10;
+            }
+
+            if (left < 0) {
+              left = 10;
+            }
+
+            return { 
+              position: 'absolute', 
+              top: `${top}px`, 
+              left: `${left}px`, 
+              zIndex: 31
+            } as React.CSSProperties;
+          })()}
+        >
+          <EmojiPicker onEmojiClick={(emojiData) => { handleReact(messageIdForFullEmojiPicker!, emojiData.emoji); setFullEmojiPickerPosition(null); setMessageIdForFullEmojiPicker(null); }} />
+        </EmojiPickerWrapper>
+      )}
+       {reactionPickerData && (
+        <ReactionPicker
+          ref={reactionPickerRef}
+          $sender={reactionPickerData.sender}
+          style={(() => {
+            const pickerWidth = 280; // Approximate width of the picker
+            let top = reactionPickerData.rect.top - 60;
+            let left = reactionPickerData.rect.left;
+
+            if (top < 0) {
+              top = reactionPickerData.rect.bottom + 10;
+            }
+
+            if (reactionPickerData.sender === 'me') {
+              left = reactionPickerData.rect.right - pickerWidth;
+            }
+
+            return { top: `${top}px`, left: `${left}px` };
+          })()}
+        >
+          {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+            <ReactionEmoji key={emoji} onClick={(e) => { e.stopPropagation(); handleReact(reactionPickerData.messageId, emoji); }}>{emoji}</ReactionEmoji>
+          ))}
+          
+        </ReactionPicker>
+      )}
+
+        {reactionsPopup && (
+        <ReactionsPopup 
+          popupData={reactionsPopup}
+          currentUserId={userIdRef.current}
+          onClose={() => setReactionsPopup(null)}
+          onRemoveReaction={(emoji) => {
+            if (reactionsPopup) {
+              handleReact(reactionsPopup.messageId, emoji); // Re-reacting with the same emoji removes it
+            }
+            setReactionsPopup(null);
+          }}
+        />
+      )}
       <AppContainer>
         <Header>
           <HeaderTitle>Pulse Chat</HeaderTitle>
@@ -1833,44 +2135,56 @@ function Chat() {
         </Header>
         <LayoutContainer>
           <ChatWindow>
-            <MessagesContainer ref={chatContainerRef}>
-              {messages.map(msg => (
-                <MessageItem
-                  key={msg.id}
-                  msg={msg}
-                  currentUserId={userIdRef.current}
-                  openLightbox={openLightbox}
-                  handleSetReply={handleSetReply}
-                  handleReact={handleReact}
-                  openDeleteMenu={setActiveDeleteMenu}
-                  activeDeleteMenu={activeDeleteMenu}
-                  deleteMenuRef={deleteMenuRef}
-                  deleteForMe={()=>{}}
-                  deleteForEveryone={()=>{}}
-                  scrollToMessage={()=>{}}
-                  isSelectModeActive={isSelectModeActive}
-                  isSelected={selectedMessages.includes(msg.id)}
-                  handleToggleSelectMessage={handleToggleSelectMessage}
-                  setActiveDeleteMenu={setActiveDeleteMenu}
-                  handleCopy={handleCopy}
-                  handleStartEdit={handleStartEdit}
-                  handleCancelSelectMode={handleCancelSelectMode}
-                  isMobileView={isMobileView}
-                  onOpenReactionPicker={handleOpenReactionPicker}
-                  setReactionsPopup={setReactionsPopup}
-                  selectedMessages={selectedMessages}
-                  handleOpenFullEmojiPicker={()=>{}}
-                  getReactionByUserId={() => null}
-                  reactionPickerData={reactionPickerData}
-                  editingMessageId={editingMessageId}
-                  editingText={editingText}
-                  setEditingText={setEditingText}
-      handleSaveEdit={handleSaveEdit}
+            <MessagesContainer ref={chatContainerRef} onScroll={handleScroll} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
+               {messages.map((msg: Message) => {
+                          if (msg.type === 'system_notification') {
+                            return <SystemMessage key={msg.id}>{msg.text}</SystemMessage>;
+                          }
+                          return (
+                            <MessageItem
+                              key={msg.id}
+                              msg={msg}
+                              currentUserId={userIdRef.current}
+                              handleSetReply={handleSetReply}
+                              handleReact={handleReact}
+                              openDeleteMenu={setActiveDeleteMenu}
+                              openLightbox={openLightbox}
+                              activeDeleteMenu={activeDeleteMenu}
+                              deleteMenuRef={deleteMenuRef}
+                              deleteForMe={deleteForMe}
+                              deleteForEveryone={deleteForEveryone}
+                              scrollToMessage={scrollToMessage}
+                              isSelectModeActive={isSelectModeActive}
+                              isSelected={selectedMessages.includes(msg.id)}
+                              handleToggleSelectMessage={handleToggleSelectMessage}
+                              setActiveDeleteMenu={setActiveDeleteMenu}
+                              handleCopy={handleCopy}
+                              handleStartEdit={handleStartEdit}
+                              handleCancelSelectMode={handleCancelSelectMode}
+                              isMobileView={isMobileView}
+                              selectedMessages={selectedMessages}
+                              onOpenReactionPicker={handleOpenReactionPicker}
+                              setReactionsPopup={setReactionsPopup}
+                              handleOpenFullEmojiPicker={handleOpenFullEmojiPicker}
+                              getReactionByUserId={getReactionByUserId}
+                              reactionPickerData={reactionPickerData}
+                              editingMessageId={editingMessageId}
+                              editingText={editingText}
+                              setEditingText={setEditingText}
+                              handleSaveEdit={handleSaveEdit}
       handleCancelEdit={handleCancelEdit}
-                />
-              ))}
+                            />
+                          );
+                        })}
                <div ref={chatEndRef} />
             </MessagesContainer>
+             <ScrollToBottomButton $isVisible={isScrollToBottomVisible} onClick={scrollToBottom}>
+              <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 5v14"></path>
+                <path d="m19 12-7 7-7-7"></path>
+              </svg>
+            </ScrollToBottomButton>
+            <TypingIndicator onlineUsers={onlineUsers} currentUserId={userIdRef.current} />
             <Footer>
               {isSelectModeActive ? (
                 <SelectModeFooter>
@@ -1891,14 +2205,89 @@ function Chat() {
                   </div>
                 </SelectModeFooter>
               ) : (
-                <InputContainer>
-                  {/* Normal input view */}
-                </InputContainer>
+                 <>
+              {replyingTo && <ReplyPreviewContainer ref={replyPreviewRef} onClick={() => scrollToMessage(replyingTo.id)}>
+                {replyingTo.type === 'video' && replyingTo.url ? (
+                  <video src={replyingTo.url} style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }} />
+                ) : (replyingTo.type === 'image' || replyingTo.type === 'video') && replyingTo.url && (
+                  <FilePreviewImage src={replyingTo.url} alt="Reply preview" />
+                )}
+                <ReplyText><p>Replying to {replyingTo.username}</p><span>
+                  {(() => {
+                    if (replyingTo.text) return replyingTo.text;
+                    if (replyingTo.url?.includes('tenor.com')) return 'GIF';
+                    if (replyingTo.type === 'image') return 'Image';
+                    if (replyingTo.type === 'video') return 'Video';
+                    return 'Message';
+                  })()}
+                </span></ReplyText><CancelPreviewButton onClick={(e) => { e.stopPropagation(); setReplyingTo(null); }}>&times;</CancelPreviewButton></ReplyPreviewContainer>}
+              {stagedFile && (
+                <FilePreviewContainer>
+                  {stagedFile.type.startsWith('image/') ? (
+                    <FilePreviewImage src={URL.createObjectURL(stagedFile)} alt="Preview" />
+                  ) : stagedFile.type.startsWith('video/') ? (
+                    <video src={URL.createObjectURL(stagedFile)} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
+                  ) : null}
+                  <FilePreviewInfo>{stagedFile.name}</FilePreviewInfo>
+                  <CancelPreviewButton onClick={() => setStagedFile(null)}>&times;</CancelPreviewButton>
+                </FilePreviewContainer>
+              )}
+              {stagedGif && <FilePreviewContainer><FilePreviewImage src={stagedGif.preview} alt="GIF Preview" /><FilePreviewInfo>GIF selected</FilePreviewInfo><CancelPreviewButton onClick={() => setStagedGif(null)}>&times;</CancelPreviewButton></FilePreviewContainer>}
+              <InputContainer>
+                <ActionButtonsContainer>
+                  <div style={{ position: 'relative' }}>
+                    <EmojiButton ref={emojiButtonRef} onClick={(e) => handleOpenEmojiPicker(e.currentTarget.getBoundingClientRect())}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></EmojiButton>
+                  </div>
+                  <div style={{ position: 'relative' }} ref={attachmentMenuRef}>
+                    <AttachButton onClick={() => setIsAttachmentMenuVisible(!isAttachmentMenuVisible)} ref={attachmentButtonRef}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg></AttachButton>
+                    <AttachmentMenuContainer isVisible={isAttachmentMenuVisible}>
+                      <AttachmentMenuItem onClick={() => { setShowGifPicker(true); setIsAttachmentMenuVisible(false); }}>
+                        <FilmIcon /> <span>GIF</span>
+                      </AttachmentMenuItem>
+                      <AttachmentMenuItem onClick={() => { fileInputRef.current?.click(); setIsAttachmentMenuVisible(false); }}>
+                        <FileIcon /> <span style={{ whiteSpace: 'nowrap' }}>Send File</span>
+                      </AttachmentMenuItem>
+                    </AttachmentMenuContainer>
+                  </div>
+                </ActionButtonsContainer>
+                <MessageInput
+                  ref={messageInputRef}
+                  rows={1}
+                  placeholder={stagedFile || stagedGif ? 'Add a caption...' : 'Type your message...'}
+                  value={inputMessage}
+                  onChange={handleInputChange}
+                  onKeyDown={handleInputKeyDown}
+                />
+                <SendButton onMouseDown={(e) => e.preventDefault()} onClick={handleSendMessage} disabled={(!inputMessage.trim() && !stagedFile && !stagedGif)}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></SendButton>
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*" />
+              </InputContainer>
+            </>
               )}
             </Footer>
           </ChatWindow>
           <UserSidebar $isVisible={isUserListVisible}>
-            {/* ... sidebar content */}
+            <h2>Online ({onlineUsers.length})</h2>
+            <UserList>
+              {(() => {
+                const currentUser = onlineUsers.find(user => user.userId === userIdRef.current);
+                const otherUsers = onlineUsers.filter(user => user.userId !== userIdRef.current);
+                const sortedUsers = currentUser ? [currentUser, ...otherUsers] : otherUsers;
+                
+                return sortedUsers.map((user, index) => (
+                  <UserListItem key={user.userId} index={index}>
+                    {user.username}{user.userId === userIdRef.current ? ' (You)' : ''}
+                  </UserListItem>
+                ));
+              })()}
+            </UserList>
+              <ClearChatButton onClick={handleClearChat}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9l-6-6H5a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"></path><path d="M15 3v6h6"></path><path d="M9.5 12.5 14.5 17.5"></path><path d="m14.5 12.5-5 5"></path></svg>
+                Clear Chat
+              </ClearChatButton>
+            <LogoutButton onClick={userContext!.logout}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+              Logout
+            </LogoutButton>
           </UserSidebar>
         </LayoutContainer>
       </AppContainer>
@@ -1922,6 +2311,14 @@ function Chat() {
         <Lightbox onClick={() => setLightboxUrl(null)}>
           <img src={lightboxUrl} alt="Lightbox" />
         </Lightbox>
+      )}
+       {showGifPicker && (
+        <GifPickerModal onClick={() => setShowGifPicker(false)}>
+          <GifPickerContent ref={gifPickerRef} onClick={(e) => e.stopPropagation()}>
+            <GifSearchBar type="text" placeholder="Search for GIFs..." value={gifSearchTerm} onChange={(e) => setGifSearchTerm(e.target.value)} />
+            {isLoadingGifs ? <p style={{textAlign: 'center', padding: '1rem'}}>Loading...</p> : <GifGrid>{gifResults.map(gif => <GifGridItem key={gif.id} src={gif.preview} onClick={() => handleGifSelect(gif)} />)}</GifGrid>}
+          </GifPickerContent>
+        </GifPickerModal>
       )}
     </>
   );
