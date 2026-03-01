@@ -2354,7 +2354,13 @@ function Chat() {
                         })}
                <div ref={chatEndRef} />
             </MessagesContainer>
-             <ScrollToBottomButton $isVisible={isScrollToBottomVisible} onClick={scrollToBottom}>
+            <ScrollToBottomButton
+              $isVisible={isScrollToBottomVisible}
+              onClick={scrollToBottom}
+              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => e.preventDefault()}
+              onPointerDown={(e) => e.preventDefault()}
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 5v14"></path>
                 <path d="m19 12-7 7-7-7"></path>
