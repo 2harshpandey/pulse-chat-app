@@ -1036,7 +1036,7 @@ interface Gif { id: string; preview: string; url: string; }
 
 // --- CHILD COMPONENTS ---
 
-const VideoPlayer = ({ src }: { src: string }) => {
+const VideoPlayer = ({ src, onPointerDown }: { src: string; onPointerDown?: () => void }) => {
   const videoRef = useRef<HTMLVideoElement>(null!);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -1059,7 +1059,7 @@ const VideoPlayer = ({ src }: { src: string }) => {
   };
 
   return (
-    <VideoPlayerWrapper onClick={handlePlayPause} onContextMenu={(e) => e.preventDefault()}>
+    <VideoPlayerWrapper onClick={handlePlayPause} onContextMenu={(e) => e.preventDefault()} onPointerDown={() => onPointerDown?.()}>
       {!isPlaying && <PlayIcon />}
       <video
         ref={videoRef}
@@ -1094,7 +1094,8 @@ const MediaDisplay = ({ msg, openLightbox }: { msg: Message, openLightbox: (url:
 
 const renderMessageContent = (
   msg: Message,
-  openLightbox: (url: string) => void
+  openLightbox: (url: string) => void,
+  onMediaPointerDown?: () => void,
 ) => {
   const isVideo = msg.type === 'video' || msg.url?.match(/\.(mp4|webm|mov)$/i);
   const isImage = msg.type === 'image' || msg.url?.match(/\.(jpeg|jpg|gif|png|svg)$/i);
@@ -1102,7 +1103,7 @@ const renderMessageContent = (
   if (isImage) {
     return (
       <MediaContent>
-        <img src={msg.url} alt={msg.originalName} onClick={() => openLightbox(msg.url!)} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
+        <img src={msg.url} alt={msg.originalName} onClick={() => openLightbox(msg.url!)} onPointerDown={() => onMediaPointerDown?.()} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{msg.text}</MessageText>}
       </MediaContent>
     );
@@ -1111,7 +1112,7 @@ const renderMessageContent = (
   if (isVideo && msg.url) {
     return (
       <MediaContent>
-        <VideoPlayer src={msg.url} />
+        <VideoPlayer src={msg.url} onPointerDown={onMediaPointerDown} />
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{msg.text}</MessageText>}
       </MediaContent>
     );
@@ -1193,6 +1194,10 @@ const MessageItem = React.memo(({
   const editInputRef = useRef<HTMLTextAreaElement>(null!);
   const messageRowRef = useRef<HTMLDivElement>(null!);
   const messageBubbleRef = useRef<HTMLDivElement>(null!);
+  // Tracks whether the pointer-down landed on a media preview element.
+  // When true the gesture-tap handler skips selection so the lightbox/player
+  // can open without also selecting the message.
+  const mediaWasTapped = useRef(false);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -1223,9 +1228,21 @@ const MessageItem = React.memo(({
       }
       // Otherwise, if it's a genuine tap in select mode, toggle the selection.
       if (isSelectModeActive) {
+        // If the tap landed directly on a media preview (image/video/GIF),
+        // let the lightbox/player handle it without also selecting the message.
+        if (mediaWasTapped.current) {
+          mediaWasTapped.current = false;
+          return;
+        }
         handleToggleSelectMessage(msg.id);
         return;
       }
+    }
+
+    // Reset the media-tap flag when a gesture ends as a drag (not a tap),
+    // so a subsequent tap always starts clean.
+    if (last && !tap) {
+      mediaWasTapped.current = false;
     }
 
     // Only perform swipe-to-reply logic for horizontal swipes, not vertical scrolls.
@@ -1446,7 +1463,7 @@ const MessageItem = React.memo(({
                   </DeleteMenuItem>
                 </DeleteMenu>
               )}
-              {renderMessageContent(msg, openLightbox)}
+              {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined)}
               <FooterContainer $sender={sender}>
                 <Timestamp $sender={sender}>{msg.edited && <span>(edited) </span>}{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
               </FooterContainer>
@@ -2391,7 +2408,7 @@ function Chat() {
                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                       </EditButton>
                     )}
-                      {isMobileView && (
+                      {isMobileView && selectedMessages.length === 1 && (
                        <CopyButton onClick={() => { if (selectedMessage) { handleCopy(selectedMessage); } handleCancelSelectMode(); }} title="Copy" >
                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                        </CopyButton>
