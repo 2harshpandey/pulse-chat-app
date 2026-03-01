@@ -15,6 +15,15 @@ const User = require('./models/user');
 const Message = require('./models/message');
 const MessageEvent = require('./models/messageEvent');
 
+// --- Environment Variable Check ---
+// Log a clear warning at startup if any critical secrets are missing.
+const REQUIRED_ENV = ['MONGODB_URI', 'ADMIN_PASSWORD', 'CLIENT_PASSWORD', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+REQUIRED_ENV.forEach(key => {
+    if (!process.env[key]) {
+        logger.warn(`[STARTUP] Missing required environment variable: ${key}. Some features may not work.`);
+    }
+});
+
 
 // --- Global Error Handlers (Safety Net) ---
 // These are crucial for logging errors that would otherwise crash the server silently.
