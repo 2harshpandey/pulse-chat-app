@@ -619,6 +619,10 @@ const TypingIndicatorContainer = styled.div`
   align-items: center;
   gap: 8px;
   animation: ${slideIn} 0.3s ease-out forwards;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
 `;
 const ReplyPreviewContainer = styled.div`
   padding: 10px 1rem; border-bottom: 1px solid #e2e8f0; background-color: #f7fafc; display: flex; align-items: center; gap: 10px;
