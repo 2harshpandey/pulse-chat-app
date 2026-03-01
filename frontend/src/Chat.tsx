@@ -2116,6 +2116,12 @@ function Chat() {
   };
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      // On touchscreen devices (mobile/tablet) the on-screen keyboard's
+      // Enter key is expected to insert a newline. Avoid intercepting it
+      // there — allow the native behavior (so Shift+Enter still works too).
+      if (isMobileView) {
+        return;
+      }
       e.preventDefault();
       handleSendMessage();
     }
