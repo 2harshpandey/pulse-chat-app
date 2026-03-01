@@ -484,6 +484,17 @@ const UserSidebar = styled.aside<{ $isVisible: boolean }>`
     z-index: 40;
   }
 `;
+// Transparent backdrop behind the sidebar on mobile — clicking it closes the panel
+const SidebarBackdrop = styled.div<{ $isVisible: boolean }>`
+  display: none;
+  @media (max-width: 768px) {
+    display: ${props => props.$isVisible ? 'block' : 'none'};
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    z-index: 39;
+  }
+`;
 const UserList = styled.ul`
   list-style: none; padding: 0; margin: 0;
   flex-grow: 1; /* Allow UserList to take up available space */
@@ -1586,12 +1597,21 @@ function Chat() {
   const userIdRef = useRef<string>(getUserId());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const replyPreviewRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef({ isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl });
+  const stateRef = useRef({ isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl, isUserListVisible });
 
-  // Update ref whenever state changes
+  // Update ref whenever any overlay state changes
   useEffect(() => {
-    stateRef.current = { isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl };
-  }, [isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl]);
+    stateRef.current = { isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl, isUserListVisible };
+  }, [isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl, isUserListVisible]);
+
+  // Push a history guard entry whenever any overlay opens so the back button is intercepted.
+  // One guard entry is enough — the popstate handler re-pushes it if more overlays remain.
+  useEffect(() => {
+    const anyOpen = isDeleteConfirmationVisible || isSelectModeActive || !!lightboxUrl || isUserListVisible;
+    if (anyOpen && !history.state?.overlayGuard) {
+      history.pushState({ overlayGuard: true }, '');
+    }
+  }, [isDeleteConfirmationVisible, isSelectModeActive, lightboxUrl, isUserListVisible]);
 
   // --- LIFECYCLE & EVENT HANDLERS ---
 
@@ -1637,20 +1657,33 @@ function Chat() {
 
   // Mobile Back Button Handler
   useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
-      const { isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl } = stateRef.current;
-      
-      // Hierarchy of closing overlays: confirmation -> lightbox
+    const handlePopState = () => {
+      const { isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl, isUserListVisible } = stateRef.current;
+
+      // Strict hierarchy: confirm modal → select mode → lightbox → user list sidebar.
+      // After closing a layer, re-push the guard if more layers are still open so the
+      // next back press is also intercepted instead of exiting the app.
       if (isDeleteConfirmationVisible) {
         setIsDeleteConfirmationVisible(false);
+        const moreOpen = isSelectModeActive || !!lightboxUrl || isUserListVisible;
+        if (moreOpen) history.pushState({ overlayGuard: true }, '');
+      } else if (isSelectModeActive) {
+        setSelectedMessages([]);
+        setIsSelectModeActive(false);
+        const moreOpen = !!lightboxUrl || isUserListVisible;
+        if (moreOpen) history.pushState({ overlayGuard: true }, '');
       } else if (lightboxUrl) {
         setLightboxUrl(null);
+        if (isUserListVisible) history.pushState({ overlayGuard: true }, '');
+      } else if (isUserListVisible) {
+        setIsUserListVisible(false);
       }
+      // else: nothing open — let the natural navigation happen
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []); // Empty dependency array means this runs only once on mount
+  }, []);
 
   // WebSocket connection with auto-reconnect on tab-resume / network-restore
   useEffect(() => {
@@ -2396,6 +2429,7 @@ function Chat() {
               )}
             </Footer>
           </ChatWindow>
+          <SidebarBackdrop $isVisible={isUserListVisible} onClick={() => setIsUserListVisible(false)} />
           <UserSidebar $isVisible={isUserListVisible}>
             <h2>Online ({onlineUsers.length})</h2>
             <UserList>
