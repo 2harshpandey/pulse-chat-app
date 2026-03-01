@@ -1572,6 +1572,9 @@ function Chat() {
   const ws = useRef<WebSocket | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
+  // Tracks whether we've done the very first scroll-to-bottom after history loads.
+  // Must be a ref (not state) so it doesn't trigger re-renders.
+  const hasInitialScrolled = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const deleteMenuRef = useRef<HTMLDivElement>(null!);
   const gifPickerRef = useRef<HTMLDivElement>(null!);
@@ -1684,6 +1687,8 @@ function Chat() {
       ws.current.onmessage = (event: MessageEvent) => {
         const messageData = JSON.parse(event.data);
         if (messageData.type === 'history') {
+          // Reset the initial-scroll flag so the new history always jumps to bottom.
+          hasInitialScrolled.current = false;
           setMessages(messageData.data.map(normalizeMessage));
         } else if (messageData.type === 'online_users') {
           setOnlineUsers(messageData.data);
@@ -1738,14 +1743,35 @@ function Chat() {
 
   useLayoutEffect(() => {
     const chatContainer = chatContainerRef.current;
-    if (chatContainer) {
-        const { scrollHeight, clientHeight, scrollTop } = chatContainer;
-        // Only autoscroll if the user is near the bottom
-        if (scrollHeight - scrollTop < clientHeight + 200) {
-            chatContainer.scrollTop = chatContainer.scrollHeight;
+    if (!chatContainer || messages.length === 0) return;
+
+    if (!hasInitialScrolled.current) {
+      // ── INITIAL LOAD ──────────────────────────────────────────────────────
+      // Force-scroll to the very bottom unconditionally.
+      // The "near-bottom" guard MUST NOT apply here: on first load scrollTop is
+      // 0 and scrollHeight is the full height of all history messages, so the
+      // guard would always fail and leave the user stranded mid-chat.
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      hasInitialScrolled.current = true;
+
+      // Images/media inside messages may finish loading AFTER this paint and
+      // push scrollHeight higher. Schedule a second scroll for that case.
+      requestAnimationFrame(() => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
         }
+      });
+      return;
     }
-}, [messages]);
+
+    // ── SUBSEQUENT MESSAGES ────────────────────────────────────────────────
+    // Only auto-scroll if the user is already near the bottom (so we don't
+    // yank them away from messages they're reading above).
+    const { scrollHeight, clientHeight, scrollTop } = chatContainer;
+    if (scrollHeight - scrollTop < clientHeight + 200) {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+  }, [messages]);
 
 
   useEffect(() => {
