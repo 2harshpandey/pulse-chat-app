@@ -1589,6 +1589,46 @@ function Chat() {
 
   // --- LIFECYCLE & EVENT HANDLERS ---
 
+  // Fetch GIFs when picker opens or search term changes (debounced)
+  useEffect(() => {
+    if (!showGifPicker) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const doFetch = async () => {
+      setIsLoadingGifs(true);
+      try {
+        const q = gifSearchTerm.trim() ? encodeURIComponent(gifSearchTerm.trim()) : 'trending';
+        const key = process.env.REACT_APP_TENOR_KEY || 'LIVDSRZULELA';
+        const url = `https://g.tenor.com/v1/search?q=${q}&key=${key}&limit=24`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Failed to fetch GIFs');
+        const data = await res.json();
+        if (cancelled) return;
+        const results: Gif[] = (data.results || []).map((r: any) => {
+          const media = r.media && r.media[0] ? r.media[0] : {};
+          const preview = media.tinygif?.url || media.nanomp4?.url || media.gif?.url || media.mediumgif?.url || media.preview?.url || '';
+          const full = media.gif?.url || media.mediumgif?.url || media.nanomp4?.url || preview;
+          return { id: r.id, preview, url: full } as Gif;
+        }).filter((g: Gif) => g.preview);
+        setGifResults(results);
+      } catch (err) {
+        console.error('GIF fetch error', err);
+        setGifResults([]);
+      } finally {
+        if (!cancelled) setIsLoadingGifs(false);
+      }
+    };
+
+    // debounce searches
+    timer = setTimeout(doFetch, 300);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [showGifPicker, gifSearchTerm]);
+
   // Mobile Back Button Handler
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
