@@ -2004,6 +2004,12 @@ function Chat() {
         setIsSelectModeActive(false);
       } else if (prevSelected.length === 0) {
         setIsSelectModeActive(true);
+        // Push the history guard synchronously so it is guaranteed to be
+        // in the stack before the user can press the back button.
+        if (!overlayGuardPushed.current) {
+          window.history.pushState({ overlayGuard: true }, '');
+          overlayGuardPushed.current = true;
+        }
       }
       
       return newSelected;
