@@ -144,6 +144,16 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => res.send('Pulse Chat Server is running!'));
 
+// --- Client Auth Verification ---
+app.post('/api/auth/verify', (req, res) => {
+    const { password } = req.body;
+    if (password && password === process.env.CLIENT_PASSWORD) {
+        res.status(200).json({ success: true });
+    } else {
+        res.status(401).json({ success: false, error: 'Incorrect password.' });
+    }
+});
+
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
   
@@ -317,9 +327,6 @@ wss.on('connection', (ws, req) => {
 
   const url = new URL(req.url, `http://${req.headers.host}`);
   const adminPassword = url.searchParams.get('adminPassword');
-
-  // --- DIAGNOSTIC LOG ---
-  logger.info(`[DIAG] Attempting connection. Admin password received: '${adminPassword}'. Expected: '${process.env.ADMIN_PASSWORD}'`);
 
   if (adminPassword === process.env.ADMIN_PASSWORD) {
     ws.isAdmin = true;

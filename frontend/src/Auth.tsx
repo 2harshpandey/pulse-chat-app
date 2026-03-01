@@ -112,10 +112,11 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [username, setUsername] = useState(() => localStorage.getItem('pulseUsername') || '');
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (password !== 'Ample@123') {
-      setError('Incorrect password.');
+  const handleLogin = async () => {
+    if (!password) {
+      setError('Please enter a password.');
       return;
     }
     if (!username.trim()) {
@@ -126,8 +127,25 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
       setError('Username cannot exceed 30 characters.');
       return;
     }
-    localStorage.setItem('pulseUsername', username);
-    onAuthSuccess({ userId: getUserId(), username });
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (response.ok) {
+        localStorage.setItem('pulseUsername', username);
+        onAuthSuccess({ userId: getUserId(), username });
+      } else {
+        setError('Incorrect password.');
+      }
+    } catch {
+      setError('Could not connect to the server. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -148,6 +166,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+          disabled={isLoading}
           />
           <EyeIconButton type="button" onClick={() => setIsPasswordVisible(prev => !prev)}>
             {isPasswordVisible ? (
@@ -157,7 +176,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
             )}
           </EyeIconButton>
         </PasswordInputWrapper>
-        <Button onClick={handleLogin}>Join Chat</Button>
+        <Button onClick={handleLogin} disabled={isLoading}>{isLoading ? 'Verifying...' : 'Join Chat'}</Button>
         {error && <ErrorMessage>{error}</ErrorMessage>}
       </AuthBox>
     </AuthContainer>
