@@ -1529,6 +1529,9 @@ const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
       width: 20px;
       height: 20px;
     }
+    /* Move the button up on small screens so it doesn't overlap the footer/send button */
+    bottom: 100px;
+    right: 16px;
   }
 `;
 
