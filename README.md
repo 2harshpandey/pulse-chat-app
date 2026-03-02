@@ -169,15 +169,28 @@ This project progressed through multiple focused sessions. Brief highlights by s
 - Session 9: Deployment and UX polishing; fixed Netlify/CI related issues.
 - Session 10: Styling and build fixes; finalized system message styling and TypeScript issues.
 - Session 11: Advanced UX: delete-for-everyone, hierarchical mobile back button behavior, presence debouncing.
-- Session 12: Security hardening, UX polish and production push.
   - Footer copy: mobile `Copy` action appears only when exactly one message selected.
   - Media preview taps: tapping image/video/GIF opens lightbox/player without selecting message; selection occurs from side-area taps or text taps.
+
+- Session 12: Security & Production Polish.
+  - Removed hardcoded passwords and secret leaks; moved auth fully backend-side (POST /api/auth/verify), admin WS auth via in-socket handshake; backend now fails fast if env vars are missing.
+  - Chat UI polish (Chat.tsx): unified back-button handling, fixed select-mode/history race, added sidebar backdrop, stabilized scroll-to-bottom (no keyboard focus steal), limited double-click quoting to desktop, improved media-tap vs selection behavior, cleaned up mobile Copy + typing-indicator UX.
+  - Backend/CI: cleaned secret logs, updated GitHub Actions to push Azure App Settings. Action: add prod secrets.
 
 - Session 13: Mobile Keyboard & Emoji UX Polish.
   - Fixed emoji picker so that tapping the emoji button while the keyboard is open now closes the keyboard and opens the emoji picker in a single, smooth action (no more two-tap or focus-jank issues).
   - Improved keyboard minimization smoothness on all mobile keyboards by avoiding focus/blur fights and deferring menu-closing logic.
   - Checkbox selection in select mode now works reliably on the first tap on mobile (no double-tap needed).
-  - Noted that the only remaining minor stutter (Gboard top bar briefly sticking) is a Gboard-specific issue, not caused by the app. All other keyboards minimize flawlessly.
+
+- Session 13B: Multi-File Upload, WhatsApp-Style Preview Modal, and Robust File Handling
+  - Added WhatsApp-style full-screen multi-file preview modal (horizontal thumbnails, caption input, send/cancel) — responsive on mobile/tablet/desktop, touch + mouse support.
+  - Multi-file upload via drag-and-drop, paste, or picker; all files previewed pre-send with per-file error feedback for unsupported types/size.
+  - Backend hardened: mimetype-based type detection, size/type limits, clear error responses surfaced to the UI.
+  - Download UX improved: original filename & extension preserved (including cross-origin blobs); download button left-aligned for accessibility.
+  - UI polish: modal, overlay, thumbnail strip styled for a professional, WhatsApp-like experience; accessibility & responsiveness validated.
+  - Bug fixes: fixed non-image/video upload failures, resolved modal/chat layout overlaps, tightened error-path handling.
+  - Business rules enforced: multi-file support + clear errors; downloads keep original names; all UI responsive & accessible.
+  - Validation & commits: build-verified and tested across devices/browsers — only remaining minor Gboard top-bar stutter attributed to Gboard, not the app.
 
 
 ## Contributing
