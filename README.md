@@ -42,8 +42,8 @@ The repository is organized with a frontend React app (TypeScript) under `fronte
 
 ## Architecture and key components
 
-- `frontend/` — React single-page app. Main entry is `src/index.tsx`, chat UI in `src/Chat.tsx`, and admin client under `src/Admin.tsx`.
-- `backend/` — Express API and WebSocket server. Primary server code is `backend/index.js`. Persistent data models live in `backend/models/`.
+- `frontend/` - React single-page app. Main entry is `src/index.tsx`, chat UI in `src/Chat.tsx`, and admin client under `src/Admin.tsx`.
+- `backend/` - Express API and WebSocket server. Primary server code is `backend/index.js`. Persistent data models live in `backend/models/`.
 - Realtime: The server keeps a WS feed for live updates consumed by the admin panel and clients.
 - Media: Uploads are forwarded to Cloudinary and references (URLs) are stored in MongoDB.
 
@@ -158,14 +158,14 @@ Admin access is password-protected. The admin client uses WebSockets to receive 
 
 This project progressed through multiple focused sessions. Brief highlights by session:
 
-- Session 1: Security cleanup — removed hardcoded client/admin passwords, moved verification to backend.
+- Session 1: Security cleanup - removed hardcoded client/admin passwords, moved verification to backend.
 - Session 2: Admin panel converted to real-time via WebSockets and bug fixes to live activity.
 - Session 3: Integrated MongoDB Atlas and persisted messages and events.
 - Session 4: Refinement for deployment readiness; removed unused features and improved environment abstraction.
-- Session 5: Production stability — CI changes to avoid backend crash loops and persistent user identity fixes.
-- Session 6: UX — added "Scroll to Bottom" button, fixed scroll-on-refresh, and build stability fixes.
-- Session 7: Advanced mobile UX fixes — refined scroll button and resolved mobile reaction/select conflicts.
-- Session 8: Final stability — fixed reaction-related crashes and polished mobile gestures.
+- Session 5: Production stability - CI changes to avoid backend crash loops and persistent user identity fixes.
+- Session 6: UX - added "Scroll to Bottom" button, fixed scroll-on-refresh, and build stability fixes.
+- Session 7: Advanced mobile UX fixes - refined scroll button and resolved mobile reaction/select conflicts.
+- Session 8: Final stability - fixed reaction-related crashes and polished mobile gestures.
 - Session 9: Deployment and UX polishing; fixed Netlify/CI related issues.
 - Session 10: Styling and build fixes; finalized system message styling and TypeScript issues.
 - Session 11: Advanced UX: delete-for-everyone, hierarchical mobile back button behavior, presence debouncing.
@@ -174,10 +174,10 @@ This project progressed through multiple focused sessions. Brief highlights by s
   - Media preview taps: tapping image/video/GIF opens lightbox/player without selecting message; selection occurs from side-area taps or text taps.
 
 - Session 13: Mobile Keyboard & Emoji UX Polish.
-- Fixed emoji picker so that tapping the emoji button while the keyboard is open now closes the keyboard and opens the emoji picker in a single, smooth action (no more two-tap or focus-jank issues).
-- Improved keyboard minimization smoothness on all mobile keyboards by avoiding focus/blur fights and deferring menu-closing logic.
-- Checkbox selection in select mode now works reliably on the first tap on mobile (no double-tap needed).
-- Noted that the only remaining minor stutter (Gboard top bar briefly sticking) is a Gboard-specific issue, not caused by the app. All other keyboards minimize flawlessly.
+ - Fixed emoji picker so that tapping the emoji button while the keyboard is open now closes the keyboard and opens the emoji picker in a single, smooth action (no more two-tap or focus-jank issues).
+ - Improved keyboard minimization smoothness on all mobile keyboards by avoiding focus/blur fights and deferring menu-closing logic.
+ - Checkbox selection in select mode now works reliably on the first tap on mobile (no double-tap needed).
+ - Noted that the only remaining minor stutter (Gboard top bar briefly sticking) is a Gboard-specific issue, not caused by the app. All other keyboards minimize flawlessly.
 
 
 ## Contributing
