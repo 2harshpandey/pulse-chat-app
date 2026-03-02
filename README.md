@@ -203,6 +203,13 @@ This project progressed through multiple focused sessions. Brief highlights by s
   - Reaction bar dismiss: reaction bar closes when clicking anywhere outside it (blank canvas).
   - Cross-cutting: all changes are responsive, smooth, and tested on touch & non-touch devices; added small UI checks for these flows.
 
+- Session 14: Security Hardening & Vulnerability Remediation.
+  - Fixed all CodeQL/GitHub scan alerts: DOM-XSS in Chat.tsx (introduced `getBlobUrl` + `sanitizeMediaUrl` taint-breaking pattern with WeakMap cache), XSS in Chat.tsx and Admin.tsx, SSRF/URL-redirect, insecure randomness, and cleartext secret logging on the backend.
+  - Added `express-rate-limit` to all admin and destructive backend routes (auth, message log, user list, clear chat, file upload).
+  - Resolved all high-severity npm audit vulnerabilities: upgraded `bfj` to `9.1.3` via package.json overrides, removing the transitive `jsonpath` ReDoS vulnerability.
+  - Remaining 4 moderate vulnerabilities (`postcss`, `webpack-dev-server`) are dev/build-tool-only with no production exposure; not fixable without migrating away from Create React App.
+  - All fixes build-verified (zero warnings), committed, and pushed.
+
 
 ## Contributing
 
