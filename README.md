@@ -174,10 +174,10 @@ This project progressed through multiple focused sessions. Brief highlights by s
   - Media preview taps: tapping image/video/GIF opens lightbox/player without selecting message; selection occurs from side-area taps or text taps.
 
 - Session 13: Mobile Keyboard & Emoji UX Polish.
- - Fixed emoji picker so that tapping the emoji button while the keyboard is open now closes the keyboard and opens the emoji picker in a single, smooth action (no more two-tap or focus-jank issues).
- - Improved keyboard minimization smoothness on all mobile keyboards by avoiding focus/blur fights and deferring menu-closing logic.
- - Checkbox selection in select mode now works reliably on the first tap on mobile (no double-tap needed).
- - Noted that the only remaining minor stutter (Gboard top bar briefly sticking) is a Gboard-specific issue, not caused by the app. All other keyboards minimize flawlessly.
+  - Fixed emoji picker so that tapping the emoji button while the keyboard is open now closes the keyboard and opens the emoji picker in a single, smooth action (no more two-tap or focus-jank issues).
+  - Improved keyboard minimization smoothness on all mobile keyboards by avoiding focus/blur fights and deferring menu-closing logic.
+  - Checkbox selection in select mode now works reliably on the first tap on mobile (no double-tap needed).
+  - Noted that the only remaining minor stutter (Gboard top bar briefly sticking) is a Gboard-specific issue, not caused by the app. All other keyboards minimize flawlessly.
 
 
 ## Contributing
