@@ -1228,6 +1228,11 @@ const MessageItem = React.memo(({
       }
       // Otherwise, if it's a genuine tap in select mode, toggle the selection.
       if (isSelectModeActive) {
+        // If the tap landed on the checkbox, let the checkbox's own handler
+        // deal with it – don't also toggle from the useDrag tap.
+        if (target.closest('[data-checkbox]')) {
+          return;
+        }
         // If the tap landed directly on a media preview (image/video/GIF),
         // let the lightbox/player handle it without also selecting the message.
         if (mediaWasTapped.current) {
@@ -1337,21 +1342,8 @@ const MessageItem = React.memo(({
     >
       {isSelectModeActive && (
         <SelectCheckboxContainer
-          onTouchStart={(e) => {
-            // stopImmediatePropagation at the native level prevents useDrag
-            // (which adds its own native listeners to messageRowRef) from also
-            // seeing this touch and calling handleToggleSelectMessage a second time.
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onTouchEnd={(e) => {
-            e.nativeEvent.stopImmediatePropagation();
-            // preventDefault stops the browser from synthesising a click event
-            // after touchend, so onClick below won't double-fire on mobile.
-            e.preventDefault();
-            handleToggleSelectMessage(msg.id);
-          }}
+          data-checkbox
           onClick={(e) => {
-            // Desktop-only fallback (touch devices are handled by onTouchEnd above).
             e.stopPropagation();
             handleToggleSelectMessage(msg.id);
           }}
@@ -1649,9 +1641,6 @@ function Chat() {
   // Prevents sending start_typing more than once per ~3 s even on rapid keystrokes.
   const typingCooldownRef = useRef(false);
   const resizeRafRef = useRef<number>(0);
-  // Tracks whether the text input was focused (keyboard open) when the user
-  // started touching the emoji button.  Set in onTouchStart, consumed in onClick.
-  const emojiKeyboardWasOpenRef = useRef(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputMessage(e.target.value);
@@ -2272,12 +2261,8 @@ function Chat() {
   };
 
   const handleEmojiClick = (emojiData: EmojiClickData) => { setInputMessage(prev => prev + emojiData.emoji); };
-  const handleOpenEmojiPicker = useCallback((rect: DOMRect, delayMs = 0) => {
-    if (delayMs > 0) {
-      setTimeout(() => setEmojiPickerPosition(prev => prev ? null : rect), delayMs);
-    } else {
-      setEmojiPickerPosition(prev => prev ? null : rect);
-    }
+  const handleOpenEmojiPicker = useCallback((rect: DOMRect) => {
+    setEmojiPickerPosition(prev => prev ? null : rect);
   }, []);
 
   const handleOpenFullEmojiPicker = useCallback((rect: DOMRect, messageId: string) => {
@@ -2319,7 +2304,18 @@ function Chat() {
         <div
           ref={emojiPickerRef}
           style={(() => {
-            const pickerWidth = 350; // Default width of the emoji picker
+            // On mobile, use fixed positioning anchored above the input area so
+            // the picker is never covered by a keyboard or pushed off-screen.
+            if (window.innerWidth <= 768) {
+              return {
+                position: 'fixed' as const,
+                bottom: '70px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 21,
+              };
+            }
+            const pickerWidth = 350;
             let top = emojiPickerPosition.top - 450;
             let left = emojiPickerPosition.left;
 
@@ -2335,10 +2331,10 @@ function Chat() {
               left = 10;
             }
 
-            return { position: 'absolute', top: `${top}px`, left: `${left}px`, zIndex: 21 };
+            return { position: 'absolute' as const, top: `${top}px`, left: `${left}px`, zIndex: 21 };
           })()}
         >
-          <EmojiPicker onEmojiClick={handleEmojiClick} />
+          <EmojiPicker onEmojiClick={handleEmojiClick} autoFocusSearch={false} />
         </div>
       )}
       {fullEmojiPickerPosition && (
@@ -2528,24 +2524,20 @@ function Chat() {
                   <div style={{ position: 'relative' }}>
                     <EmojiButton
                       ref={emojiButtonRef}
-                      onTouchStart={() => {
-                        // Capture keyboard state BEFORE focus shifts away from the input.
-                        // onTouchStart fires first – document.activeElement is still the input.
+                      onPointerDown={(e) => {
+                        // Prevent the button from receiving focus itself — this
+                        // avoids the browser shifting focus from the input to the
+                        // button and back, which causes the visible keyboard "jank".
+                        e.preventDefault();
+                        // If the on-screen keyboard is currently visible (input is
+                        // focused), blur it so it slides away smoothly.
                         if (messageInputRef.current && document.activeElement === messageInputRef.current) {
-                          emojiKeyboardWasOpenRef.current = true;
-                          try { messageInputRef.current.blur(); } catch (_) {}
+                          messageInputRef.current.blur();
                         }
                       }}
                       onClick={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
-                        if (emojiKeyboardWasOpenRef.current) {
-                          // Keyboard was just dismissed; wait for its slide-down animation
-                          // (~150 ms) before showing the picker so it isn't covered.
-                          emojiKeyboardWasOpenRef.current = false;
-                          handleOpenEmojiPicker(rect, 150);
-                        } else {
-                          handleOpenEmojiPicker(rect);
-                        }
+                        handleOpenEmojiPicker(rect);
                       }}
                     ><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></EmojiButton>
                   </div>
