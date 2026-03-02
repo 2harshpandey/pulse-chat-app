@@ -2121,7 +2121,7 @@ function Chat() {
         const container = chatContainerRef.current;
         const containerRect = container.getBoundingClientRect();
         const menuRect = deleteMenuRef.current.getBoundingClientRect();
-        const margin = 12;
+        const margin = 36; // Increased margin for full clearance above footer
         if (menuRect.bottom > containerRect.bottom - margin) {
           container.scrollBy({ top: menuRect.bottom - containerRect.bottom + margin, behavior: 'smooth' });
         }
