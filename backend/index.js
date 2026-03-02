@@ -278,7 +278,7 @@ app.delete('/api/delete/:id', apiLimiter, async (req, res) => {
   }
 });
 
-app.delete('/api/messages/all', adminSecretAuth, async (req, res) => {
+app.delete('/api/messages/all', adminLimiter, adminSecretAuth, async (req, res) => {
     try {
         await Message.deleteMany({});
         await MessageEvent.deleteMany({});
@@ -354,7 +354,7 @@ app.get('/api/admin/server-logs', adminLimiter, adminAuth, (req, res) => {
 });
 
 // Route for fetching paginated messages for infinite scroll
-app.get('/api/messages', async (req, res) => {
+app.get('/api/messages', apiLimiter, async (req, res) => {
     try {
         const limit = 50;
         const { before } = req.query; // 'before' will be the 'createdAt' timestamp of the oldest message client-side
