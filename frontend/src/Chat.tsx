@@ -18,7 +18,7 @@ const getUserId = (): string => {
 // --- STYLED COMPONENTS ---
 export const GlobalStyle = createGlobalStyle`
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body, #root { height: 100%; overflow: hidden; }
+  html, body, #root { height: 100%; overflow: hidden; overscroll-behavior: none; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f7fafc; color: #2d3748; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
   * { -webkit-tap-highlight-color: transparent; }
   /* Scrollbar styles for webkit browsers */
@@ -1831,13 +1831,20 @@ function Chat() {
   // General click/keydown handlers
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (deleteMenuRef.current && !deleteMenuRef.current.contains(event.target as Node)) setActiveDeleteMenu(null);
-      if (gifPickerRef.current && !gifPickerRef.current.contains(event.target as Node)) setShowGifPicker(false);
-      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node) && !attachmentButtonRef.current?.contains(event.target as Node)) setIsAttachmentMenuVisible(false);
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node) && !emojiButtonRef.current?.contains(event.target as Node)) {
-        setEmojiPickerPosition(null);
-        setFullEmojiPickerPosition(null);
-      }
+      // Capture the target synchronously, then defer the menu-closing
+      // checks to the next macrotask so that the current touch-event
+      // processing (and the keyboard-dismiss animation) isn't blocked
+      // by DOM reads + React setState calls on the main thread.
+      const target = event.target as Node;
+      setTimeout(() => {
+        if (deleteMenuRef.current && !deleteMenuRef.current.contains(target)) setActiveDeleteMenu(null);
+        if (gifPickerRef.current && !gifPickerRef.current.contains(target)) setShowGifPicker(false);
+        if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(target) && !attachmentButtonRef.current?.contains(target)) setIsAttachmentMenuVisible(false);
+        if (emojiPickerRef.current && !emojiPickerRef.current.contains(target) && !emojiButtonRef.current?.contains(target)) {
+          setEmojiPickerPosition(null);
+          setFullEmojiPickerPosition(null);
+        }
+      }, 0);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -2241,8 +2248,12 @@ function Chat() {
   const handleChatAreaClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target !== chatContainerRef.current) return;
     if (isSelectModeActive || !!lightboxUrl || isDeleteConfirmationVisible) return;
+    // On mobile, don't auto-focus the input when tapping empty space —
+    // the user may be intentionally dismissing the keyboard, and fighting
+    // the blur causes a visible stutter in the keyboard animation.
+    if (isMobileView) return;
     messageInputRef.current?.focus();
-  }, [isSelectModeActive, lightboxUrl, isDeleteConfirmationVisible]);
+  }, [isSelectModeActive, lightboxUrl, isDeleteConfirmationVisible, isMobileView]);
 
   const scrollToMessage = useCallback((messageId: string) => {
     const element = document.getElementById(`message-${messageId}`);
@@ -2525,18 +2536,18 @@ function Chat() {
                     <EmojiButton
                       ref={emojiButtonRef}
                       onPointerDown={(e) => {
-                        // Prevent the button from receiving focus itself — this
-                        // avoids the browser shifting focus from the input to the
-                        // button and back, which causes the visible keyboard "jank".
+                        // Prevent the button from stealing focus — stops the
+                        // browser from shifting focus away from the input.
                         e.preventDefault();
-                        // If the on-screen keyboard is currently visible (input is
-                        // focused), blur it so it slides away smoothly.
+                        // Capture the button rect NOW, before any layout shift
+                        // from keyboard dismissal changes the button position.
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        // If the soft keyboard is open (input focused), dismiss it.
                         if (messageInputRef.current && document.activeElement === messageInputRef.current) {
                           messageInputRef.current.blur();
                         }
-                      }}
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
+                        // Toggle the emoji picker immediately in the same event
+                        // — no second tap needed even when the keyboard was open.
                         handleOpenEmojiPicker(rect);
                       }}
                     ><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg></EmojiButton>
