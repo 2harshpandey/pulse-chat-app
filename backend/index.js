@@ -60,7 +60,7 @@ const storage = new CloudinaryStorage({
     unique_filename: true,    // Append a short random suffix to avoid collisions
   },
 });
-const upload = multer({ storage });
+const upload = multer({ \n  storage,\n  limits: { fileSize: 100 * 1024 * 1024 }  // 100 MB max\n});
 
 // --- Server Setup ---
 const app = express();
@@ -165,36 +165,52 @@ app.post('/api/auth/verify', (req, res) => {
     }
 });
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
-  
-  const { userId } = req.body;
-  const username = onlineUsers.get(userId)?.username || 'Unknown'; // Will be fixed in a later step
+app.post('/api/upload', (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err) {
+      logger.error(`Upload middleware error: ${err.message}`);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large. Max size is 100 MB.' });
+      }
+      return res.status(500).json({ error: `Upload failed: ${err.message}` });
+    }
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded.' });
+    
+    const { userId } = req.body;
+    const username = onlineUsers.get(userId)?.username || 'Unknown';
 
-  // Create a MessageEvent for the upload
-  const event = new MessageEvent({
-    type: 'upload',
-    file: {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-    },
-    userId,
-    username,
-    timestamp: new Date().toISOString(),
-  });
-  event.save();
+    // Create a MessageEvent for the upload
+    const event = new MessageEvent({
+      type: 'upload',
+      file: {
+          originalname: req.file.originalname,
+          mimetype: req.file.mimetype,
+          size: req.file.size,
+      },
+      userId,
+      username,
+      timestamp: new Date().toISOString(),
+    });
+    event.save();
 
-  broadcastToAdmins('history', event);
-  broadcastToAdmins('activity', `File '${req.file.originalname}' uploaded by '${username}'.`);
+    broadcastToAdmins('history', event);
+    broadcastToAdmins('activity', `File '${req.file.originalname}' uploaded by '${username}'.`);
 
-  logger.info(`File uploaded: ${req.file.originalname}`);
-  res.status(200).json({
-    id: req.file.filename,
-    type: req.file.resource_type,
-    url: req.file.path,
-    originalName: req.file.originalname,
-    text: req.body.text,
+    logger.info(`File uploaded: ${req.file.originalname}`);
+
+    // Determine file type from mimetype since Cloudinary resource_type
+    // may return 'raw' for PDFs and other non-image/video files.
+    let fileType = 'file';
+    if (req.file.mimetype && req.file.mimetype.startsWith('image/')) fileType = 'image';
+    else if (req.file.mimetype && req.file.mimetype.startsWith('video/')) fileType = 'video';
+
+    res.status(200).json({
+      id: req.file.filename,
+      type: fileType,
+      url: req.file.path,
+      originalName: req.file.originalname,
+      text: req.body.text,
+    });
   });
 });
 

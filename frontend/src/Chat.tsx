@@ -449,7 +449,7 @@ const MediaContent = styled.div`
 const MediaDownloadOverlayBtn = styled.button`
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px;
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -498,6 +498,174 @@ const InlineDownloadBtn = styled.button`
   transition: opacity 0.15s, background 0.15s;
   &:hover { opacity: 1; background: rgba(0,0,0,0.12); }
   svg { width: 13px; height: 13px; flex-shrink: 0; }
+`;
+
+/* ═══ WhatsApp-style File Preview Modal ═══ */
+const FilePreviewModal = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  background: #1b2430;
+  color: white;
+`;
+const FilePreviewModalHeader = styled.div`
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  gap: 12px;
+  background: rgba(0,0,0,0.25);
+  flex-shrink: 0;
+`;
+const FilePreviewModalClose = styled.button`
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  &:hover { background: rgba(255,255,255,0.1); }
+  svg { width: 22px; height: 22px; }
+`;
+const FilePreviewModalFilename = styled.div`
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+`;
+const FilePreviewModalBody = styled.div`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 20px;
+  min-height: 0;
+`;
+const FilePreviewModalFooter = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(0,0,0,0.25);
+  flex-shrink: 0;
+`;
+const FilePreviewThumbStrip = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(0,0,0,0.18);
+  flex-shrink: 0;
+  overflow-x: auto;
+  &::-webkit-scrollbar { height: 4px; }
+  &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 2px; }
+`;
+const FilePreviewThumb = styled.button<{ $active?: boolean }>`
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  border-radius: 8px;
+  border: 2.5px solid ${p => p.$active ? '#3b82f6' : 'transparent'};
+  overflow: hidden;
+  cursor: pointer;
+  background: #2a3544;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s;
+  flex-shrink: 0;
+  img, video { width: 100%; height: 100%; object-fit: cover; }
+  svg { width: 24px; height: 24px; stroke: rgba(255,255,255,0.55); }
+`;
+const FilePreviewAddBtn = styled.button`
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  border-radius: 8px;
+  border: 2px dashed rgba(255,255,255,0.3);
+  background: transparent;
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s, color 0.15s;
+  &:hover { border-color: rgba(255,255,255,0.55); color: rgba(255,255,255,0.8); }
+  svg { width: 24px; height: 24px; }
+`;
+const FilePreviewRemoveBtn = styled.button`
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid #1b2430;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  line-height: 1;
+`;
+const FilePreviewCaptionInput = styled.input`
+  flex: 1;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 20px;
+  padding: 10px 16px;
+  color: white;
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color 0.15s;
+  &::placeholder { color: rgba(255,255,255,0.4); }
+  &:focus { border-color: rgba(255,255,255,0.35); }
+`;
+const FilePreviewSendBtn = styled.button`
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  border-radius: 50%;
+  border: none;
+  background: #3b82f6;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+  &:hover { background: #2563eb; transform: scale(1.05); }
+  &:disabled { opacity: 0.5; cursor: default; transform: none; }
+  svg { width: 22px; height: 22px; }
+`;
+const FilePreviewNoPreview = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 16px;
+  svg { width: 72px; height: 72px; stroke: rgba(255,255,255,0.35); stroke-width: 1.2; }
+  p { font-size: 1rem; opacity: 0.6; }
+  span { font-size: 0.82rem; opacity: 0.4; text-transform: uppercase; }
 `;
 
 const ConfirmationButton = styled.button`
@@ -1811,6 +1979,10 @@ function Chat() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [activeDeleteMenu, setActiveDeleteMenu] = useState<string | null>(null);
   const [stagedFile, setStagedFile] = useState<File | null>(null);
+  const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+  const [showFilePreview, setShowFilePreview] = useState(false);
+  const [previewActiveIndex, setPreviewActiveIndex] = useState(0);
+  const [previewCaption, setPreviewCaption] = useState('');
   const [stagedGif, setStagedGif] = useState<Gif | null>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [gifResults, setGifResults] = useState<Gif[]>([]);
@@ -1842,6 +2014,7 @@ function Chat() {
   // Must be a ref (not state) so it doesn't trigger re-renders.
   const hasInitialScrolled = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addFileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
   const deleteMenuRef = useRef<HTMLDivElement>(null!);
@@ -2093,16 +2266,23 @@ function Chat() {
     return () => document.removeEventListener('keydown', handler);
   }, [isSelectModeActive, lightboxUrl, isDeleteConfirmationVisible, isUserListVisible, editingMessageId, isMobileView]);
 
-  // ── Unquote on Escape ─────────────────────────────────────────────
+  // ── Unquote on Escape / Close file preview ─────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && replyingTo) {
-        setReplyingTo(null);
+      if (e.key === 'Escape') {
+        if (showFilePreview) {
+          setShowFilePreview(false);
+          setStagedFiles([]);
+          setPreviewCaption('');
+          setPreviewActiveIndex(0);
+        } else if (replyingTo) {
+          setReplyingTo(null);
+        }
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [replyingTo]);
+  }, [replyingTo, showFilePreview]);
 
   // ── Drag-and-drop file upload ──────────────────────────────────────
   useEffect(() => {
@@ -2131,8 +2311,15 @@ function Chat() {
       e.preventDefault();
       dragCounterRef.current = 0;
       setIsDragging(false);
-      const file = e.dataTransfer?.files?.[0];
-      if (file) { setStagedFile(file); setStagedGif(null); }
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const fileArr = Array.from(files);
+        setStagedFiles(fileArr);
+        setPreviewActiveIndex(0);
+        setPreviewCaption('');
+        setShowFilePreview(true);
+        setStagedGif(null);
+      }
     };
 
     document.addEventListener('dragenter', onDragEnter);
@@ -2203,13 +2390,22 @@ function Chat() {
     setInputMessage('');
     setReplyingTo(null);
     setStagedFile(null);
+    setStagedFiles([]);
     setStagedGif(null);
+    setShowFilePreview(false);
+    setPreviewCaption('');
+    setPreviewActiveIndex(0);
     if (messageInputRef.current) {
       messageInputRef.current.style.height = 'auto';
     }
   };
 
   const handleSendMessage = async () => {
+    // If multi-file preview is open, send from there instead
+    if (showFilePreview && stagedFiles.length > 0) {
+      handleSendFromPreview();
+      return;
+    }
     if (!stagedFile && !stagedGif && !inputMessage.trim()) return;
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !userContext?.profile) return;
 
@@ -2638,12 +2834,93 @@ function Chat() {
       handleSendMessage();
     }
   };
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => { if (event.target.files?.[0]) { setStagedFile(event.target.files[0]); setStagedGif(null); } };
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const file = e.clipboardData?.files?.[0];
-    if (file) { e.preventDefault(); setStagedFile(file); setStagedGif(null); }
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const fileArr = Array.from(files);
+      setStagedFiles(fileArr);
+      setPreviewActiveIndex(0);
+      setPreviewCaption('');
+      setShowFilePreview(true);
+      setStagedGif(null);
+    }
+    // Reset the input so re-selecting the same file triggers onChange
+    if (event.target) event.target.value = '';
   };
-  const handleGifSelect = (gif: Gif) => { setStagedGif(gif); setStagedFile(null); setShowGifPicker(false); };
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = e.clipboardData?.files;
+    if (files && files.length > 0) {
+      e.preventDefault();
+      const fileArr = Array.from(files);
+      setStagedFiles(fileArr);
+      setPreviewActiveIndex(0);
+      setPreviewCaption('');
+      setShowFilePreview(true);
+      setStagedGif(null);
+    }
+  };
+
+  const handleSendFromPreview = async () => {
+    if (stagedFiles.length === 0) return;
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !userContext?.profile) return;
+
+    let replyContext: ReplyContext | undefined = undefined;
+    if (replyingTo) {
+      const { type } = replyingTo;
+      if (type === 'system_notification') { setReplyingTo(null); return; }
+      let replyText = replyingTo.text || 'Message';
+      if (!replyingTo.text) {
+        if (replyingTo.url?.includes('tenor.com')) replyText = 'GIF';
+        else if (replyingTo.type === 'image') replyText = 'Image';
+        else if (replyingTo.type === 'video') replyText = 'Video';
+      }
+      replyContext = { id: replyingTo.id, username: replyingTo.username, text: replyText, type };
+    }
+
+    const caption = previewCaption.trim();
+
+    for (let i = 0; i < stagedFiles.length; i++) {
+      const file = stagedFiles[i];
+      const tempId = Date.now().toString() + '_' + i;
+      const fileType: 'image' | 'video' | 'file' = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file';
+
+      const message: Message = {
+        id: tempId,
+        userId: userIdRef.current,
+        username: userContext.profile.username,
+        type: fileType,
+        url: URL.createObjectURL(file),
+        originalName: file.name,
+        text: i === 0 ? caption : undefined,
+        timestamp: new Date().toISOString(),
+        replyingTo: i === 0 ? replyContext : undefined,
+        isUploading: true,
+      };
+      setMessages(prev => [...prev, message]);
+      requestAnimationFrame(() => scrollToBottom());
+
+      const formData = new FormData();
+      formData.append('file', file);
+      if (i === 0 && caption) formData.append('text', caption);
+      formData.append('userId', userIdRef.current);
+
+      fetch(`${process.env.REACT_APP_API_URL}/api/upload`, { method: 'POST', body: formData })
+        .then(response => { if (!response.ok) throw new Error('Upload failed'); return response.json(); })
+        .then(uploadedFileData => {
+          const finalMessage = { ...message, ...uploadedFileData, isUploading: false, id: uploadedFileData.id };
+          setMessages(prev => prev.map(m => m.id === tempId ? finalMessage : m));
+          ws.current?.send(JSON.stringify(finalMessage));
+        })
+        .catch(error => {
+          console.error('File upload failed!', error);
+          setMessages(prev => prev.map(m => m.id === tempId ? { ...message, isUploading: false, uploadError: true, text: 'Upload failed' } : m));
+        });
+    }
+
+    resetInput();
+  };
+
+  const handleGifSelect = (gif: Gif) => { setStagedGif(gif); setStagedFile(null); setStagedFiles([]); setShowFilePreview(false); };
 
 
 
@@ -2663,6 +2940,80 @@ function Chat() {
           <DragDropSubtitle>Images, videos, PDFs and more — release to upload</DragDropSubtitle>
         </DragDropCard>
       </DragDropOverlay>
+      {/* WhatsApp-style File Preview Modal */}
+      {showFilePreview && stagedFiles.length > 0 && (() => {
+        const activeFile = stagedFiles[previewActiveIndex] || stagedFiles[0];
+        const isImg = activeFile?.type.startsWith('image/');
+        const isVid = activeFile?.type.startsWith('video/');
+        const ext = activeFile?.name.split('.').pop()?.toUpperCase() || '';
+        const sizeKB = activeFile ? (activeFile.size / 1024) : 0;
+        const sizeLabel = sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${Math.round(sizeKB)} KB`;
+        return (
+          <FilePreviewModal>
+            <FilePreviewModalHeader>
+              <FilePreviewModalClose onClick={() => { setShowFilePreview(false); setStagedFiles([]); setPreviewCaption(''); setPreviewActiveIndex(0); }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </FilePreviewModalClose>
+              <FilePreviewModalFilename>{activeFile?.name}</FilePreviewModalFilename>
+            </FilePreviewModalHeader>
+            <FilePreviewModalBody>
+              {isImg ? (
+                <img src={URL.createObjectURL(activeFile)} alt={activeFile.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }} />
+              ) : isVid ? (
+                <video src={URL.createObjectURL(activeFile)} controls style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '8px' }} />
+              ) : (
+                <FilePreviewNoPreview>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                  <p>No preview available</p>
+                  <span>{sizeLabel} — {ext}</span>
+                </FilePreviewNoPreview>
+              )}
+            </FilePreviewModalBody>
+            {stagedFiles.length > 1 && (
+              <FilePreviewThumbStrip>
+                {stagedFiles.map((f, idx) => {
+                  const tIsImg = f.type.startsWith('image/');
+                  const tIsVid = f.type.startsWith('video/');
+                  return (
+                    <div key={idx} style={{ position: 'relative', flexShrink: 0 }}>
+                      <FilePreviewThumb $active={idx === previewActiveIndex} onClick={() => setPreviewActiveIndex(idx)}>
+                        {tIsImg ? <img src={URL.createObjectURL(f)} alt={f.name} /> : tIsVid ? <video src={URL.createObjectURL(f)} /> : (
+                          <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        )}
+                      </FilePreviewThumb>
+                      <FilePreviewRemoveBtn onClick={(e) => { e.stopPropagation(); setStagedFiles(prev => { const next = prev.filter((_, i) => i !== idx); if (next.length === 0) { setShowFilePreview(false); setPreviewCaption(''); setPreviewActiveIndex(0); } else if (previewActiveIndex >= next.length) { setPreviewActiveIndex(next.length - 1); } return next; }); }}>&times;</FilePreviewRemoveBtn>
+                    </div>
+                  );
+                })}
+                <FilePreviewAddBtn onClick={() => addFileInputRef.current?.click()}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </FilePreviewAddBtn>
+              </FilePreviewThumbStrip>
+            )}
+            {stagedFiles.length === 1 && (
+              <FilePreviewThumbStrip>
+                <FilePreviewAddBtn onClick={() => addFileInputRef.current?.click()}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </FilePreviewAddBtn>
+              </FilePreviewThumbStrip>
+            )}
+            <FilePreviewModalFooter>
+              <FilePreviewCaptionInput
+                placeholder="Add a caption..."
+                value={previewCaption}
+                onChange={(e) => setPreviewCaption(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendFromPreview(); } }}
+              />
+              <FilePreviewSendBtn onClick={handleSendFromPreview}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </FilePreviewSendBtn>
+            </FilePreviewModalFooter>
+          </FilePreviewModal>
+        );
+      })()}
       {emojiPickerPosition && (
         <div
           ref={emojiPickerRef}
@@ -2872,7 +3223,7 @@ function Chat() {
                     return 'Message';
                   })()}
                 </span></ReplyText><CancelPreviewButton onClick={(e) => { e.stopPropagation(); setReplyingTo(null); }}>&times;</CancelPreviewButton></ReplyPreviewContainer>}
-              {stagedFile && (
+              {stagedFile && !showFilePreview && (
                 <FilePreviewContainer>
                   {stagedFile.type.startsWith('image/') ? (
                     <FilePreviewImage src={URL.createObjectURL(stagedFile)} alt="Preview" />
@@ -2888,6 +3239,12 @@ function Chat() {
                   )}
                   <FilePreviewInfo>{stagedFile.name}</FilePreviewInfo>
                   <CancelPreviewButton onClick={() => setStagedFile(null)}>&times;</CancelPreviewButton>
+                </FilePreviewContainer>
+              )}
+              {stagedFiles.length > 0 && !showFilePreview && (
+                <FilePreviewContainer>
+                  <FilePreviewInfo>{stagedFiles.length} file{stagedFiles.length > 1 ? 's' : ''} ready</FilePreviewInfo>
+                  <CancelPreviewButton onClick={() => { setStagedFiles([]); setPreviewCaption(''); }}>&times;</CancelPreviewButton>
                 </FilePreviewContainer>
               )}
               {stagedGif && <FilePreviewContainer><FilePreviewImage src={stagedGif.preview} alt="GIF Preview" /><FilePreviewInfo>GIF selected</FilePreviewInfo><CancelPreviewButton onClick={() => setStagedGif(null)}>&times;</CancelPreviewButton></FilePreviewContainer>}
@@ -2934,8 +3291,9 @@ function Chat() {
                   onKeyDown={handleInputKeyDown}
                   onPaste={handlePaste}
                 />
-                <SendButton onMouseDown={(e) => e.preventDefault()} onClick={handleSendMessage} disabled={(!inputMessage.trim() && !stagedFile && !stagedGif)}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></SendButton>
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt" />
+                <SendButton onMouseDown={(e) => e.preventDefault()} onClick={handleSendMessage} disabled={(!inputMessage.trim() && !stagedFile && !stagedGif && stagedFiles.length === 0)}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></SendButton>
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
+                <input type="file" ref={addFileInputRef} onChange={(e) => { if (e.target.files) { setStagedFiles(prev => [...prev, ...Array.from(e.target.files!)]); } if (e.target) e.target.value = ''; }} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
               </InputContainer>
             </>
               )}
