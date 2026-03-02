@@ -1888,6 +1888,17 @@ function Chat() {
     return () => document.removeEventListener('keydown', handler);
   }, [isSelectModeActive, lightboxUrl, isDeleteConfirmationVisible, isUserListVisible, editingMessageId, isMobileView]);
 
+  // ── Unquote on Escape ─────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && replyingTo) {
+        setReplyingTo(null);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [replyingTo]);
+
   useLayoutEffect(() => {
     const chatContainer = chatContainerRef.current;
     if (!chatContainer || messages.length === 0) return;
