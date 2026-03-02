@@ -5,15 +5,29 @@ const AdminContainer = styled.div`
   padding: 2rem;
   background-color: #f7fafc;
   min-height: 100vh;
-  display: flex; /* Added */
-  flex-direction: column; /* Added */
+  display: flex;
+  flex-direction: column;
+
+  @media (max-width: 768px) {
+    padding: 1.25rem 1rem;
+  }
+  @media (max-width: 480px) {
+    padding: 1rem 0.75rem;
+  }
 `;
 
 const Title = styled.h1`
   font-size: 2.5rem;
   font-weight: bold;
   color: #1a202c;
-  margin-bottom: 2rem;
+  margin-bottom: 0;
+
+  @media (max-width: 768px) {
+    font-size: 2rem;
+  }
+  @media (max-width: 480px) {
+    font-size: 1.5rem;
+  }
 `;
 
 const LoginFormContainer = styled.div`
@@ -21,8 +35,9 @@ const LoginFormContainer = styled.div`
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  min-height: 100vh;
   background-color: #e2e8f0;
+  padding: 1rem;
 `;
 
 const LoginBox = styled.div`
@@ -33,12 +48,33 @@ const LoginBox = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
+  max-width: 420px;
+
+  @media (max-width: 480px) {
+    padding: 2rem 1.5rem;
+    border-radius: 12px;
+  }
 `;
 
 const PasswordInputWrapper = styled.div`
   position: relative;
-  width: 300px;
+  width: 100%;
+  max-width: 300px;
   margin-bottom: 1rem;
+
+  @media (max-width: 480px) {
+    max-width: 100%;
+  }
+`;
+
+const HeaderRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+  flex-wrap: wrap;
 `;
 
 const EyeIconButton = styled.button`
@@ -80,7 +116,9 @@ const Input = styled.input`
   margin-bottom: 1rem;
   border: 1px solid #cbd5e0;
   border-radius: 4px;
-  width: 300px;
+  width: 100%;
+  max-width: 300px;
+  box-sizing: border-box;
   transition: all 0.2s;
   &:focus {
     outline: none;
@@ -91,10 +129,10 @@ const Input = styled.input`
 
 const SelectWrapper = styled.div`
   position: relative;
-  width: 300px; /* Inherit width from Select */
-  margin-bottom: 1rem; /* Inherit margin from Select */
-  flex: 1; /* Inherit flex from Input/Select */
-  min-width: 180px; /* Inherit min-width from Input/Select */
+  width: 100%;
+  max-width: 300px;
+  margin-bottom: 1rem;
+  box-sizing: border-box;
 
   &::after {
     content: '';
@@ -140,16 +178,28 @@ const Select = styled.select`
 const FilterContainer = styled.div`
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
   margin-bottom: 1.5rem;
   padding: 1rem;
   background-color: #f0f4f8;
   border-radius: 8px;
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
 
-  ${Input}, ${SelectWrapper} { /* Changed to SelectWrapper */
+  ${Input}, ${SelectWrapper} {
     flex: 1;
-    min-width: 180px;
+    min-width: 160px;
+    max-width: none;
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 480px) {
+    gap: 0.5rem;
+    padding: 0.75rem;
+
+    ${Input}, ${SelectWrapper} {
+      flex: 1 1 100%;
+      min-width: unset;
+    }
   }
 `;
 
@@ -162,12 +212,17 @@ const Button = styled.button`
   border: none;
   border-radius: 4px;
   transition: background-color 0.2s;
+  white-space: nowrap;
   &:hover {
     background-color: #2563EB;
   }
   &:disabled {
     background-color: #9ca3af;
     cursor: not-allowed;
+  }
+  @media (max-width: 480px) {
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
   }
 `;
 
@@ -179,7 +234,14 @@ const ErrorMessage = styled.p`
 const TabContainer = styled.div`
   display: flex;
   border-bottom: 1px solid #cbd5e0;
-  margin-bottom: -1px; /* To make tab content border connect */
+  margin-bottom: -1px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 `;
 
 const TabButton = styled.button<{ active: boolean }>`
@@ -196,8 +258,14 @@ const TabButton = styled.button<{ active: boolean }>`
   border-top-right-radius: 0.25rem;
   outline: none;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
   &:hover {
     color: #3B82F6;
+  }
+  @media (max-width: 600px) {
+    padding: 0.6rem 1rem;
+    font-size: 0.875rem;
   }
 `;
 
@@ -212,10 +280,19 @@ const TabContent = styled.div`
   background-color: white;
   display: flex;
   flex-direction: column;
+
+  @media (max-width: 768px) {
+    padding: 1.25rem 1rem;
+  }
+  @media (max-width: 480px) {
+    padding: 1rem 0.75rem;
+    border-top-right-radius: 0.25rem;
+  }
 `;
 
 const Table = styled.table`
   width: 100%;
+  min-width: 580px;
   border-collapse: collapse;
   margin-top: 1rem;
   font-size: 0.9rem;
@@ -228,6 +305,7 @@ const Th = styled.th`
   background-color: #f7fafc;
   font-weight: 600;
   color: #4a5568;
+  white-space: nowrap;
 `;
 
 const Td = styled.td`
@@ -237,11 +315,16 @@ const Td = styled.td`
   word-break: break-word;
 `;
 
+const TableWrapper = styled.div`
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 4px;
+`;
+
 const LogoutButton = styled(Button)`
-  position: absolute;
-  top: 2rem;
-  right: 2rem;
   background-color: #EF4444;
+  flex-shrink: 0;
   &:hover {
     background-color: #DC2626;
   }
@@ -249,28 +332,47 @@ const LogoutButton = styled(Button)`
 
 const ActivityLogContainer = styled.div`
   height: calc(100vh - 20rem);
+  min-height: 200px;
   width: 100%;
   background-color: #1a202c;
   color: #e2e8f0;
   padding: 1rem;
   border-radius: 4px;
   font-family: 'Courier New', Courier, monospace;
+  font-size: 0.85rem;
   overflow-y: auto;
   border: 1px solid #e2e8f0;
+
+  @media (max-width: 768px) {
+    height: 55vh;
+    min-height: 180px;
+    padding: 0.75rem;
+    font-size: 0.78rem;
+  }
 `;
 
 const LogViewerContainer = styled.pre`
   height: calc(100vh - 20rem);
+  min-height: 200px;
   width: 100%;
   overflow-y: scroll;
+  overflow-x: auto;
   background-color: #1a202c;
   color: #e2e8f0;
   padding: 1rem;
   border-radius: 4px;
   font-family: 'Courier New', Courier, monospace;
+  font-size: 0.85rem;
   white-space: pre-wrap;
   word-wrap: break-word;
   border: 1px solid #e2e8f0;
+
+  @media (max-width: 768px) {
+    height: 55vh;
+    min-height: 180px;
+    padding: 0.75rem;
+    font-size: 0.78rem;
+  }
 `;
 
 const ActivityLogItem = styled.div`
@@ -296,6 +398,7 @@ const formatTime = (dateString: string) => {
 
 const ClearHistoryButton = styled(Button)`
   background-color: #e53e3e;
+  flex-shrink: 0;
   &:hover {
     background-color: #c53030;
   }
@@ -611,9 +714,11 @@ const Admin = () => {
 
   return (
     <AdminContainer>
-      <Title>Admin Panel</Title>
-      <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
-      
+      <HeaderRow>
+        <Title>Admin Panel</Title>
+        <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
+      </HeaderRow>
+
       <TabContainer>
         <TabButton active={activeTab === 'messages'} onClick={() => setActiveTab('messages')}>Message Log</TabButton>
         <TabButton active={activeTab === 'users'} onClick={() => setActiveTab('users')}>Users</TabButton>
@@ -624,8 +729,8 @@ const Admin = () => {
       <TabContent>
         {activeTab === 'messages' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2>Message Log</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <h2 style={{ margin: 0 }}>Message Log</h2>
               <ClearHistoryButton onClick={handlePermanentClear}>Clear Chat History</ClearHistoryButton>
             </div>
             <FilterContainer>
@@ -663,7 +768,8 @@ const Admin = () => {
             {isLoading ? (
                 <p>Loading history...</p>
             ) : (
-                <Table>
+                <TableWrapper>
+                  <Table>
                     <thead>
                         <tr>
                             <Th>Date</Th>
@@ -686,7 +792,8 @@ const Admin = () => {
                             </tr>
                         ))}
                     </tbody>
-                </Table>
+                  </Table>
+                </TableWrapper>
             )}
           </>
         )}
@@ -697,22 +804,24 @@ const Admin = () => {
             {isLoading ? (
               <p>Loading users...</p>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <Th>User ID</Th>
-                    <Th>Username</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map(user => (
-                    <tr key={user.userId}>
-                      <Td>{user.userId}</Td>
-                      <Td>{user.username}</Td>
+              <TableWrapper>
+                <Table>
+                  <thead>
+                    <tr>
+                      <Th>User ID</Th>
+                      <Th>Username</Th>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
+                  </thead>
+                  <tbody>
+                    {users.map(user => (
+                      <tr key={user.userId}>
+                        <Td>{user.userId}</Td>
+                        <Td>{user.username}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </TableWrapper>
             )}
           </>
         )}
@@ -730,8 +839,8 @@ const Admin = () => {
 
         {activeTab === 'logs' && (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2>Server Logs</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <h2 style={{ margin: 0 }}>Server Logs</h2>
                 <Button onClick={handleRefreshServerLogs}>Refresh</Button>
               </div>
               {isLoading ? (
