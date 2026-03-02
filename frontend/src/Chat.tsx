@@ -2217,6 +2217,21 @@ function Chat() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const handleEmojiClick = (emojiData: EmojiClickData) => { setInputMessage(prev => prev + emojiData.emoji); };
+  const handleOpenEmojiPicker = useCallback((rect: DOMRect) => {
+    // On mobile/touch devices: if the keyboard is open (input focused),
+    // blur the input first so the on-screen keyboard hides and doesn't
+    // cover the emoji picker. Delay opening briefly to allow the
+    // keyboard hide animation to run.
+    if (isMobileView && messageInputRef.current && document.activeElement === messageInputRef.current) {
+      try { messageInputRef.current.blur(); } catch (e) { /* ignore */ }
+      setTimeout(() => setEmojiPickerPosition(prev => prev ? null : rect), 80);
+      return;
+    }
+
+    setEmojiPickerPosition(prev => prev ? null : rect);
+  }, [isMobileView]);
+
   const handleOpenFullEmojiPicker = useCallback((rect: DOMRect, messageId: string) => {
     setFullEmojiPickerPosition(rect);
     setMessageIdForFullEmojiPicker(messageId);
@@ -2230,15 +2245,7 @@ function Chat() {
 
   const selectedMessage = messages.find(msg => msg.id === selectedMessages[0]);
   const canEditSelectedMessage = selectedMessages.length === 1 && selectedMessage && selectedMessage.userId === userIdRef.current && selectedMessage.text && (new Date().getTime() - new Date(selectedMessage.timestamp).getTime()) < 15 * 60 * 1000;
-
-  const handleEmojiClick = (emojiData: EmojiClickData) => { setInputMessage(prev => prev + emojiData.emoji); };
-  const handleOpenEmojiPicker = (rect: DOMRect) => {
-    if (emojiPickerPosition) {
-      setEmojiPickerPosition(null);
-    } else {
-      setEmojiPickerPosition(rect);
-    }
-  };
+ 
   
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
