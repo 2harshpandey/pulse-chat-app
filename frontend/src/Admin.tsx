@@ -292,10 +292,13 @@ const TabContent = styled.div`
 
 const Table = styled.table`
   width: 100%;
-  min-width: 580px;
   border-collapse: collapse;
   margin-top: 1rem;
   font-size: 0.9rem;
+`;
+
+const WideTable = styled(Table)`
+  min-width: 580px;
 `;
 
 const Th = styled.th`
@@ -312,7 +315,8 @@ const Td = styled.td`
   padding: 0.75rem;
   text-align: left;
   border-bottom: 1px solid #e2e8f0;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 `;
 
 const TableWrapper = styled.div`
@@ -769,7 +773,7 @@ const Admin = () => {
                 <p>Loading history...</p>
             ) : (
                 <TableWrapper>
-                  <Table>
+                  <WideTable>
                     <thead>
                         <tr>
                             <Th>Date</Th>
@@ -792,7 +796,7 @@ const Admin = () => {
                             </tr>
                         ))}
                     </tbody>
-                  </Table>
+                  </WideTable>
                 </TableWrapper>
             )}
           </>
