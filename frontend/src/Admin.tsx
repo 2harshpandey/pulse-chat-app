@@ -36,7 +36,8 @@ const isTenorUrl = (url: string | undefined | null): boolean => {
 const AdminContainer = styled.div`
   padding: 2rem;
   background-color: #f7fafc;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 
@@ -45,6 +46,9 @@ const AdminContainer = styled.div`
   }
   @media (max-width: 480px) {
     padding: 1rem 0.75rem;
+  }
+  @media (max-height: 500px) {
+    padding: 0.4rem 0.6rem;
   }
 `;
 
@@ -59,6 +63,9 @@ const Title = styled.h1`
   }
   @media (max-width: 480px) {
     font-size: 1.5rem;
+  }
+  @media (max-height: 500px) {
+    font-size: 1.2rem;
   }
 `;
 
@@ -107,6 +114,10 @@ const HeaderRow = styled.div`
   margin-bottom: 1.5rem;
   gap: 1rem;
   flex-wrap: wrap;
+  flex-shrink: 0;
+  @media (max-height: 500px) {
+    margin-bottom: 0.3rem;
+  }
 `;
 
 const EyeIconButton = styled.button`
@@ -157,6 +168,10 @@ const Input = styled.input`
     border-color: #3B82F6;
     box-shadow: 0 0 0 2px #bfdbfe;
   }
+  @media (max-height: 500px) {
+    padding: 0.28rem 0.5rem;
+    font-size: 0.78rem;
+  }
 `;
 
 const SelectWrapper = styled.div`
@@ -205,6 +220,11 @@ const Select = styled.select`
     border-color: #3B82F6;
     box-shadow: 0 0 0 2px #bfdbfe;
   }
+  @media (max-height: 500px) {
+    padding: 0.28rem 0.5rem;
+    padding-right: 2rem;
+    font-size: 0.78rem;
+  }
 `;
 
 const FilterContainer = styled.div`
@@ -216,6 +236,7 @@ const FilterContainer = styled.div`
   background-color: #f0f4f8;
   border-radius: 8px;
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+  flex-shrink: 0;
 
   ${Input}, ${SelectWrapper} {
     flex: 1;
@@ -231,6 +252,20 @@ const FilterContainer = styled.div`
     ${Input}, ${SelectWrapper} {
       flex: 1 1 100%;
       min-width: unset;
+    }
+  }
+
+  /* Landscape: keep all filters in a single row, very compact */
+  @media (max-height: 500px) {
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    padding: 0.3rem 0.5rem;
+    margin-bottom: 0.3rem;
+
+    ${Input}, ${SelectWrapper} {
+      flex: 1;
+      min-width: 60px;
+      margin-bottom: 0;
     }
   }
 `;
@@ -312,6 +347,9 @@ const TabContent = styled.div`
   background-color: white;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 
   @media (max-width: 768px) {
     padding: 1.25rem 1rem;
@@ -319,6 +357,9 @@ const TabContent = styled.div`
   @media (max-width: 480px) {
     padding: 1rem 0.75rem;
     border-top-right-radius: 0.25rem;
+  }
+  @media (max-height: 500px) {
+    padding: 0.4rem 0.5rem;
   }
 `;
 
@@ -341,6 +382,10 @@ const Th = styled.th`
   font-weight: 600;
   color: #4a5568;
   white-space: nowrap;
+  @media (max-height: 500px) {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.78rem;
+  }
 `;
 
 const Td = styled.td`
@@ -349,22 +394,20 @@ const Td = styled.td`
   border-bottom: 1px solid #e2e8f0;
   overflow-wrap: break-word;
   word-break: normal;
+  @media (max-height: 500px) {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.78rem;
+  }
 `;
 
 const TableWrapper = styled.div`
   width: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
-  border-radius: 4px;
-  max-height: 60vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  /* Ensures same number of rows visible on all devices, with scroll for overflow */
-  @media (max-width: 768px) {
-    max-height: 60vh;
-  }
-  @media (max-width: 480px) {
-    max-height: 60vh;
-  }
+  border-radius: 4px;
 `;
 
 const LogoutButton = styled(Button)`
@@ -376,8 +419,8 @@ const LogoutButton = styled(Button)`
 `;
 
 const ActivityLogContainer = styled.div`
-  height: calc(100vh - 20rem);
-  min-height: 200px;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   background-color: #1a202c;
   color: #e2e8f0;
@@ -389,16 +432,18 @@ const ActivityLogContainer = styled.div`
   border: 1px solid #e2e8f0;
 
   @media (max-width: 768px) {
-    height: 55vh;
-    min-height: 180px;
     padding: 0.75rem;
     font-size: 0.78rem;
+  }
+  @media (max-height: 500px) {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
   }
 `;
 
 const LogViewerContainer = styled.pre`
-  height: calc(100vh - 20rem);
-  min-height: 200px;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   overflow-y: scroll;
   overflow-x: auto;
@@ -413,10 +458,12 @@ const LogViewerContainer = styled.pre`
   border: 1px solid #e2e8f0;
 
   @media (max-width: 768px) {
-    height: 55vh;
-    min-height: 180px;
     padding: 0.75rem;
     font-size: 0.78rem;
+  }
+  @media (max-height: 500px) {
+    padding: 0.4rem 0.5rem;
+    font-size: 0.75rem;
   }
 `;
 
