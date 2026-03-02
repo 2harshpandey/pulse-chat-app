@@ -1252,7 +1252,7 @@ const MessageItem = React.memo(({
     }
 
     // Only perform swipe-to-reply logic for horizontal swipes, not vertical scrolls.
-    if (isMobileView && !isSelectModeActive && messageRowRef.current && Math.abs(mx) > Math.abs(my)) {
+    if (isMobileView && !isSelectModeActive && !isDeleted && messageRowRef.current && Math.abs(mx) > Math.abs(my)) {
       if (last) {
         // If the drag was far enough, trigger the reply action.
         if (mx > 70) {
@@ -1449,7 +1449,7 @@ const MessageItem = React.memo(({
                   <ActionButton ref={reactButtonRef} className="react-action-button" onClick={() => onOpenReactionPicker(msg.id, reactButtonRef.current!.getBoundingClientRect(), sender)} title="React">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
                   </ActionButton>
-                  <ActionButton onClick={() => openDeleteMenu(msg.id)} title="More" style={{ fontSize: '20px' }}>&#8942;</ActionButton>
+                  <ActionButton onClick={() => openDeleteMenu(msg.id)} title="More" className="more-action-button" style={{ fontSize: '20px' }}>&#8942;</ActionButton>
                 </MessageActions>
               )}
               {activeDeleteMenu === msg.id && (
@@ -1838,7 +1838,11 @@ function Chat() {
       // by DOM reads + React setState calls on the main thread.
       const target = event.target as Node;
       setTimeout(() => {
-        if (deleteMenuRef.current && !deleteMenuRef.current.contains(target)) setActiveDeleteMenu(null);
+        // If click is on the three-dots button, let handleOpenDeleteMenu toggle it.
+        const targetEl = event.target as Element;
+        if (!targetEl.closest('.more-action-button')) {
+          if (deleteMenuRef.current && !deleteMenuRef.current.contains(target)) setActiveDeleteMenu(null);
+        }
         if (gifPickerRef.current && !gifPickerRef.current.contains(target)) setShowGifPicker(false);
         if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(target) && !attachmentButtonRef.current?.contains(target)) setIsAttachmentMenuVisible(false);
         if (emojiPickerRef.current && !emojiPickerRef.current.contains(target) && !emojiButtonRef.current?.contains(target)) {
@@ -2045,6 +2049,7 @@ function Chat() {
 
   const handleSetReply = useCallback((message: Message) => {
     if (message.type === 'system_notification') return;
+    if (message.isDeleted) return; // Can't quote a deleted message
     setReplyingTo(message);
   }, []);
 
@@ -2078,7 +2083,11 @@ function Chat() {
   useEffect(() => {
     if (!reactionPickerData) return;
     function handleOutside(e: MouseEvent | TouchEvent) {
-      if (reactionPickerRef.current && !reactionPickerRef.current.contains(e.target as Node)) {
+      const target = e.target as Element;
+      // If the tap/click is on the button that opened the picker, let the
+      // button's own onClick toggle it — otherwise we'd close-then-reopen.
+      if (target.closest('.react-action-button')) return;
+      if (reactionPickerRef.current && !reactionPickerRef.current.contains(target)) {
         setReactionPickerData(null);
       }
     }
@@ -2114,19 +2123,20 @@ function Chat() {
   // When the message-actions menu opens, scroll the chat so the bottom of
   // the menu sits inside the visible area (above the footer).
   const handleOpenDeleteMenu = useCallback((messageId: string) => {
-    setActiveDeleteMenu(messageId);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!deleteMenuRef.current || !chatContainerRef.current) return;
-        const container = chatContainerRef.current;
-        const containerRect = container.getBoundingClientRect();
-        const menuRect = deleteMenuRef.current.getBoundingClientRect();
-        const margin = 36; // Increased margin for full clearance above footer
-        if (menuRect.bottom > containerRect.bottom - margin) {
-          container.scrollBy({ top: menuRect.bottom - containerRect.bottom + margin, behavior: 'smooth' });
-        }
-      });
-    });
+    // Toggle off if the same menu is already open.
+    setActiveDeleteMenu(prev => prev === messageId ? null : messageId);
+    setTimeout(() => {
+      // If the menu just closed, deleteMenuRef.current will be null — no-op.
+      if (!deleteMenuRef.current || !chatContainerRef.current) return;
+      const container = chatContainerRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const menuRect = deleteMenuRef.current.getBoundingClientRect();
+      // Scroll exactly enough so the menu bottom is 12 px above the container edge.
+      const overflow = menuRect.bottom - containerRect.bottom + 12;
+      if (overflow > 0) {
+        container.scrollBy({ top: overflow, behavior: 'smooth' });
+      }
+    }, 50); // 50 ms gives React + browser time to fully render the menu
   }, []);
 
   // --- OVERLAY & HISTORY MANAGEMENT ---
