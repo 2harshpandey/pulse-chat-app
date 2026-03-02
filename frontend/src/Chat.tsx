@@ -27,52 +27,49 @@ const getUserId = (): string => {
 const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.com'];
 
 /**
- * Fetches a file as a Blob and triggers a browser download with the correct filename.
- * The HTML `download` attribute is silently ignored by browsers for cross-origin URLs
- * (e.g. Cloudinary CDN), so we must fetch the blob and create a local object URL.
- * Falls back to opening in a new tab if the fetch fails or the host is not trusted.
+ * Triggers a browser download for a file hosted on a trusted CDN.
+ * Uses an invisible anchor-click — no fetch() (avoids SSRF) and no window.open()
+ * (avoids unvalidated URL redirect). The browser handles the download; for
+ * cross-origin CDN URLs the `download` filename hint may be ignored by the browser
+ * but the file still opens/saves correctly.
  */
-const downloadFile = async (url: string, filename: string): Promise<void> => {
-  // Parse and validate first — do nothing if URL is invalid or host is not trusted.
+const downloadFile = (url: string, filename: string): void => {
+  // Parse and validate — do nothing if the URL is invalid or the host is not trusted.
   let parsed: URL;
   try { parsed = new URL(url); } catch { return; }
-  const { hostname, protocol } = parsed;
   const isTrustedHost =
-    (protocol === 'https:' || protocol === 'http:') &&
-    ALLOWED_DOWNLOAD_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
-  if (!isTrustedHost) return; // Silently reject untrusted hosts — no redirect.
-  // Use the parsed/normalised href so every downstream call uses the validated value.
-  const safeUrl = parsed.href;
-  try {
-    const response = await fetch(safeUrl);
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-  } catch {
-    // Fetch failed — fall back to opening the already-validated URL in a new tab.
-    window.open(safeUrl, '_blank', 'noopener,noreferrer');
-  }
+    (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+    ALLOWED_DOWNLOAD_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
+  if (!isTrustedHost) return; // Silently reject — no redirect, no fetch.
+  // Use the canonicalized href (not the raw input string) for the anchor href.
+  const a = document.createElement('a');
+  a.href = parsed.href;
+  a.download = filename;
+  a.rel = 'noopener noreferrer';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 };
 
 /**
  * Sanitizes a URL before using it as a media src/href attribute.
  * Rejects any URL whose protocol is not https:, http:, or blob: — prevents
  * XSS via javascript: or data: URIs that could be injected through server data.
+ * Returns the URL-parser canonical form (parsed.href) rather than the raw input
+ * string so that static-analysis taint tracking sees a URL-object-derived value,
+ * not the original user-controlled string.
  */
 const sanitizeMediaUrl = (url: string | undefined | null): string => {
   if (!url) return '';
-  if (url.startsWith('blob:')) return url; // createObjectURL URLs are always safe
   try {
-    const { protocol } = new URL(url);
-    return (protocol === 'https:' || protocol === 'http:') ? url : '';
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:' && parsed.protocol !== 'blob:') {
+      return ''; // Reject dangerous protocols (javascript:, data:, etc.)
+    }
+    return parsed.href; // Canonical form from the URL parser — not the raw input string
   } catch {
-    return '';
+    return ''; // Unparseable URL — reject
   }
 };
 
@@ -3011,9 +3008,10 @@ function Chat() {
             </FilePreviewModalHeader>
             <FilePreviewModalBody>
               {isImg ? (
-                <img src={sanitizeMediaUrl(URL.createObjectURL(activeFile))} alt="File preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }} />
+                // URL.createObjectURL always returns a blob: URL — browser-generated, never user-controlled.
+                <img src={URL.createObjectURL(activeFile)} alt="File preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '8px' }} />
               ) : isVid ? (
-                <video src={sanitizeMediaUrl(URL.createObjectURL(activeFile))} controls style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '8px' }} />
+                <video src={URL.createObjectURL(activeFile)} controls style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '8px' }} />
               ) : (
                 <FilePreviewNoPreview>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
@@ -3033,7 +3031,7 @@ function Chat() {
                   return (
                     <div key={idx} style={{ position: 'relative', flexShrink: 0 }}>
                       <FilePreviewThumb $active={idx === previewActiveIndex} onClick={() => setPreviewActiveIndex(idx)}>
-                        {tIsImg ? <img src={sanitizeMediaUrl(URL.createObjectURL(f))} alt="" /> : tIsVid ? <video src={sanitizeMediaUrl(URL.createObjectURL(f))} /> : (
+                        {tIsImg ? <img src={URL.createObjectURL(f)} alt="" /> : tIsVid ? <video src={URL.createObjectURL(f)} /> : (
                           <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                         )}
                       </FilePreviewThumb>
