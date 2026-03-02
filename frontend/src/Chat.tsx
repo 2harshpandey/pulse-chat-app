@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useContext, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useContext, useLayoutEffect, useCallback } from 'react';
 import styled, { createGlobalStyle, keyframes } from 'styled-components';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { useDrag } from '@use-gesture/react';
@@ -1626,6 +1626,26 @@ function Chat() {
   const messageInputRef = useRef<HTMLTextAreaElement>(null!);
   const userIdRef = useRef<string>(getUserId());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Cooldown flag: true while we're within the throttle window after sending start_typing.
+  // Prevents sending start_typing more than once per ~3 s even on rapid keystrokes.
+  const typingCooldownRef = useRef(false);
+  const resizeRafRef = useRef<number>(0);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputMessage(e.target.value);
+    // Fire typing indicator outside of React's render cycle so it never
+    // delays the state update that makes the character appear.
+    handleTyping();
+    // Debounce the DOM measurement (auto-resize) to the next animation frame
+    // so layout thrashing doesn't block the input on low-end devices.
+    cancelAnimationFrame(resizeRafRef.current);
+    const textarea = e.target;
+    resizeRafRef.current = requestAnimationFrame(() => {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${textarea.scrollHeight}px`;
+      textarea.style.overflowY = textarea.scrollHeight > 120 ? 'auto' : 'hidden';
+    });
+  };
   const replyPreviewRef = useRef<HTMLDivElement>(null);
   const stateRef = useRef({ isSelectModeActive, isDeleteConfirmationVisible, lightboxUrl, isUserListVisible });
   // Tracks whether we currently have a guard entry in the history stack.
@@ -1953,17 +1973,27 @@ function Chat() {
     }
   };
 
-  const handleTyping = () => {
+  const handleTyping = useCallback(() => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
-    if (!typingTimeoutRef.current) {
-      ws.current.send(JSON.stringify({ type: 'start_typing' }));
+    // Skip if the WebSocket send-buffer is backed up (slow / congested network).
+    // 4 KB is a safe threshold – typing indicators are tiny but we don't want
+    // to pile onto an already-struggling connection.
+    if (ws.current.bufferedAmount > 4096) return;
+
+    // Throttle: only send start_typing once per cooldown window (3 s).
+    if (!typingCooldownRef.current) {
+      typingCooldownRef.current = true;
+      try { ws.current.send(JSON.stringify({ type: 'start_typing' })); } catch (_) { /* ignore send errors */ }
     }
+
+    // Reset the stop-typing timer on every keystroke (debounce).
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     typingTimeoutRef.current = setTimeout(() => {
-      ws.current?.send(JSON.stringify({ type: 'stop_typing' }));
+      try { ws.current?.send(JSON.stringify({ type: 'stop_typing' })); } catch (_) { /* ignore */ }
       typingTimeoutRef.current = null;
-    }, 2000);
-  };
+      typingCooldownRef.current = false;
+    }, 3000);
+  }, []);
 
   const handleClearChat = () => {
     if (window.confirm('Are you sure you want to clear the chat for this session?')) {
@@ -1971,43 +2001,42 @@ function Chat() {
     }
   };
 
-  const handleSetReply = (message: Message) => {
+  const handleSetReply = useCallback((message: Message) => {
     if (message.type === 'system_notification') return;
     setReplyingTo(message);
-  };
+  }, []);
 
-  const handleReact = (messageId: string, emoji: string) => {
+  const handleReact = useCallback((messageId: string, emoji: string) => {
     if (!ws.current || !userContext?.profile) return;
     const reactionMessage = { type: 'react', messageId, userId: userIdRef.current, emoji };
     ws.current.send(JSON.stringify(reactionMessage));
     setReactionPickerData(null);
-  };
+  }, [userContext?.profile]);
 
-  const deleteForMe = (messageId: string) => {
+  const deleteForMe = useCallback((messageId: string) => {
     if (!ws.current) return;
     ws.current.send(JSON.stringify({ type: 'delete_for_me', messageId }));
-  };
+  }, []);
 
-  const deleteForEveryone = (messageId: string) => {
+  const deleteForEveryone = useCallback((messageId: string) => {
     if (!ws.current) return;
     ws.current.send(JSON.stringify({ type: 'delete_for_everyone', messageId }));
-  };
+  }, []);
 
-  const handleOpenReactionPicker = (messageId: string, rect: DOMRect, sender: 'me' | 'other') => {
-    if (reactionPickerData?.messageId === messageId) {
-      setReactionPickerData(null);
-    } else {
-      setReactionPickerData({ messageId, rect, sender });
-    }
-  };
+  const handleOpenReactionPicker = useCallback((messageId: string, rect: DOMRect, sender: 'me' | 'other') => {
+    setReactionPickerData(prev => {
+      if (prev?.messageId === messageId) return null;
+      return { messageId, rect, sender };
+    });
+  }, []);
   
   const reactionPickerRef = useRef<HTMLDivElement>(null!);
   
   // --- OVERLAY & HISTORY MANAGEMENT ---
 
-  const openLightbox = (url: string) => {
+  const openLightbox = useCallback((url: string) => {
     setLightboxUrl(url);
-  };
+  }, []);
 
   const handleInitiateDelete = () => {
     const selectedMessageObjects = messages.filter(msg => selectedMessages.includes(msg.id));
@@ -2024,7 +2053,7 @@ function Chat() {
     setIsDeleteConfirmationVisible(true);
   };
   
-  const handleToggleSelectMessage = (messageId: string) => {
+  const handleToggleSelectMessage = useCallback((messageId: string) => {
     setSelectedMessages(prevSelected => {
       const newSelected = prevSelected.includes(messageId)
         ? prevSelected.filter(id => id !== messageId)
@@ -2034,8 +2063,6 @@ function Chat() {
         setIsSelectModeActive(false);
       } else if (prevSelected.length === 0) {
         setIsSelectModeActive(true);
-        // Push the history guard synchronously so it is guaranteed to be
-        // in the stack before the user can press the back button.
         if (!overlayGuardPushed.current) {
           window.history.pushState({ overlayGuard: true }, '');
           overlayGuardPushed.current = true;
@@ -2044,12 +2071,12 @@ function Chat() {
       
       return newSelected;
     });
-  };
+  }, []);
 
-  const handleCancelSelectMode = () => {
+  const handleCancelSelectMode = useCallback(() => {
     setIsSelectModeActive(false);
     setSelectedMessages([]);
-  };
+  }, []);
 
   const handleBulkDeleteForMe = () => {
     setMessages(prev => prev.filter(m => !selectedMessages.includes(m.id)));
@@ -2073,7 +2100,7 @@ function Chat() {
     setSelectedMessages([]);
   };
 
-    const handleCopy = async (message: Message) => {
+    const handleCopy = useCallback(async (message: Message) => {
       console.log('Attempting to copy message:', message);
       try {
         if (message.type === 'text' && message.text) {
@@ -2121,35 +2148,38 @@ function Chat() {
       } catch (err) {
         console.error('Failed to copy content: ', err);
       }
-    };
+    }, []);
 
-    const handleStartEdit = (message: Message) => {
+    const handleStartEdit = useCallback((message: Message) => {
       setEditingMessageId(message.id);
       setEditingText(message.text || '');
       setActiveDeleteMenu(null);
-    };
+    }, []);
 
-    const handleCancelEdit = () => {
+    const handleCancelEdit = useCallback(() => {
       setEditingMessageId(null);
       setEditingText('');
-    };
+    }, []);
 
-    const handleSaveEdit = () => {
-      if (!editingMessageId || !editingText.trim()) {
-        handleCancelEdit();
-        return;
-      }
-      if (ws.current) {
-        ws.current.send(JSON.stringify({
-          type: 'edit',
-          messageId: editingMessageId,
-          newText: editingText,
-        }));
-      }
-      handleCancelEdit();
-    };
+    const handleSaveEdit = useCallback(() => {
+      setEditingMessageId(currentId => {
+        setEditingText(currentText => {
+          if (!currentId || !currentText.trim()) {
+            // nothing to save – reset
+          } else if (ws.current) {
+            ws.current.send(JSON.stringify({
+              type: 'edit',
+              messageId: currentId,
+              newText: currentText,
+            }));
+          }
+          return '';
+        });
+        return null;
+      });
+    }, []);
 
-    const getReactionByUserId = (messageId: string | undefined, userId: string): string | null => {
+    const getReactionByUserId = useCallback((messageId: string | undefined, userId: string): string | null => {
     if (!messageId) return null;
     const message = messages.find(m => m.id === messageId);
     if (!message || !message.reactions) return null;
@@ -2160,18 +2190,18 @@ function Chat() {
       }
     }
     return null;
-  };
+  }, [messages]);
 
-  const handleScroll = () => {
+  const handleScroll = useCallback(() => {
     const container = chatContainerRef.current;
     if (container) {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const isScrolledUp = (scrollHeight - scrollTop - clientHeight) > 20;
       setIsScrollToBottomVisible(isScrolledUp);
     }
-  };
+  }, []);
 
-  const scrollToMessage = (messageId: string) => {
+  const scrollToMessage = useCallback((messageId: string) => {
     const element = document.getElementById(`message-${messageId}`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2181,11 +2211,19 @@ function Chat() {
         element.style.backgroundColor = 'transparent';
       }, 1500);
     }
-  };
+  }, []);
   
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const handleOpenFullEmojiPicker = useCallback((rect: DOMRect, messageId: string) => {
+    setFullEmojiPickerPosition(rect);
+    setMessageIdForFullEmojiPicker(messageId);
+    setReactionPickerData(null);
+    setIsSelectModeActive(false);
+    setSelectedMessages([]);
+  }, []);
 
   // --- RENDER ---
   if (!userContext?.profile) { return <Auth onAuthSuccess={userContext!.login} />; }
@@ -2201,24 +2239,7 @@ function Chat() {
       setEmojiPickerPosition(rect);
     }
   };
-    const handleOpenFullEmojiPicker = (rect: DOMRect, messageId: string) => {
-    setFullEmojiPickerPosition(rect);
-    setMessageIdForFullEmojiPicker(messageId);
-    setReactionPickerData(null);
-    handleCancelSelectMode();
-  };
-    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInputMessage(e.target.value);
-    handleTyping();
-    const textarea = e.target;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-    if (textarea.scrollHeight > 120) {
-      textarea.style.overflowY = 'auto';
-    } else {
-      textarea.style.overflowY = 'hidden';
-    }
-  };
+  
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       // On touchscreen devices (mobile/tablet) the on-screen keyboard's
