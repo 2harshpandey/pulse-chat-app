@@ -135,6 +135,10 @@ Admin access is password-protected. The admin client uses WebSockets to receive 
 ## UX & behavior details (notable implementations)
 
 - Mobile-first UX improvements: careful handling of on-screen keyboard, `Enter` behavior set to insert new line on mobile, keyboard not minimized when tapping the “scroll-to-bottom” control.
+- **2026-03-02 update:**
+  - Emoji picker now opens and keyboard closes in a single tap on mobile, with no focus-jank or two-tap issues.
+  - Keyboard minimization is now smooth on all keyboards except Gboard (which has a known Android bug outside app control).
+  - Checkbox selection in select mode now works reliably on the first tap on mobile (no double-tap needed).
 - Overlay/back-button behavior: mobile back button closes overlays in a strict hierarchy (delete modal → select mode → lightbox → user list) rather than exiting the app.
 - Selection mode: synchronous guard push into history to avoid race conditions when enabling message-select mode.
 - Copy behavior: the footer `Copy` action is mobile-only and appears only when exactly one message is selected; it hides when multiple messages are selected.
@@ -169,7 +173,14 @@ This project progressed through multiple focused sessions. Brief highlights by s
   - Footer copy: mobile `Copy` action appears only when exactly one message selected.
   - Media preview taps: tapping image/video/GIF opens lightbox/player without selecting message; selection occurs from side-area taps or text taps.
 
-If you need the full detailed session notes, see `frontend/old_chats/PROJECT_BIBLE.md` (local notes — not tracked in remote). The repository intentionally untracked that folder to keep personal session notes private.
+**Session 13: Mobile Keyboard & Emoji UX Polish (2026-03-02)**
+
+- Fixed emoji picker so that tapping the emoji button while the keyboard is open now closes the keyboard and opens the emoji picker in a single, smooth action (no more two-tap or focus-jank issues).
+- Improved keyboard minimization smoothness on all mobile keyboards by avoiding focus/blur fights and deferring menu-closing logic.
+- Checkbox selection in select mode now works reliably on the first tap on mobile (no double-tap needed).
+- Noted that the only remaining minor stutter (Gboard top bar briefly sticking) is a Gboard-specific issue, not caused by the app. All other keyboards minimize flawlessly.
+- All changes were build-verified and pushed with zero warnings. No breaking changes to existing features.
+
 
 ## Contributing
 
