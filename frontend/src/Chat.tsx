@@ -431,7 +431,7 @@ const FilePreviewInfo = styled.div`
   flex-grow: 1; font-size: 0.9rem; color: #4a5568;
 `;
 const CancelPreviewButton = styled.button`
-  background: #e2e8f0; border-radius: 50%; border: none; width: 24px; height: 24px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center;
+  background: #e2e8f0; border-radius: 50%; border: none; width: 30px; height: 30px; min-width: 30px; min-height: 30px; flex-shrink: 0; cursor: pointer; font-weight: bold; font-size: 1.1rem; display: flex; align-items: center; justify-content: center;
   transition: background-color 0.2s;
   &:hover { background-color: #cbd5e0; }
 `;
@@ -626,12 +626,12 @@ const TypingIndicatorContainer = styled.div`
   user-select: none;
 `;
 const ReplyPreviewContainer = styled.div`
-  padding: 10px 1rem; border-bottom: 1px solid #e2e8f0; background-color: #f7fafc; display: flex; align-items: center; gap: 10px;
+  padding: 10px 1rem; border-bottom: 1px solid #e2e8f0; background-color: #f7fafc; display: flex; align-items: center; gap: 10px; overflow: hidden;
 `;
 const ReplyText = styled.div`
-  flex-grow: 1; font-size: 0.9rem; color: #4a5568;
-  p { font-weight: bold; }
-  span { opacity: 0.8; }
+  flex-grow: 1; font-size: 0.9rem; color: #4a5568; min-width: 0; overflow: hidden;
+  p { font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  span { opacity: 0.8; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;
 
   const QuotedMessageContainer = styled.div<{ $sender: 'me' | 'other' }>`
@@ -1541,9 +1541,9 @@ const FileIcon = () => (
   </svg>
 );
 
-const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
+const ScrollToBottomButton = styled.button<{ $isVisible: boolean; $hasFooterPreview?: boolean }>`
   position: absolute;
-  bottom: 50px;
+  bottom: ${props => props.$hasFooterPreview ? '140px' : '85px'};
   right: 20px;
   width: 44px;
   height: 44px;
@@ -1556,7 +1556,7 @@ const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition: opacity 0.3s ease, transform 0.3s ease, bottom 0.3s ease;
   opacity: ${props => props.$isVisible ? 1 : 0};
   transform: ${props => props.$isVisible ? 'scale(1)' : 'scale(0.8)'};
   pointer-events: ${props => props.$isVisible ? 'auto' : 'none'};
@@ -1577,14 +1577,13 @@ const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
   @media (max-width: 768px) {
     width: 38px;
     height: 38px;
+    bottom: ${props => props.$hasFooterPreview ? '140px' : '85px'};
+    right: 16px;
     
     svg {
       width: 20px;
       height: 20px;
     }
-    /* Move the button up on small screens so it doesn't overlap the footer/send button */
-    bottom: 100px;
-    right: 16px;
   }
 `;
 
@@ -2535,6 +2534,7 @@ function Chat() {
             </MessagesContainer>
             <ScrollToBottomButton
               $isVisible={isScrollToBottomVisible}
+              $hasFooterPreview={!!(replyingTo || stagedFile || stagedGif)}
               onClick={scrollToBottom}
               onMouseDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
