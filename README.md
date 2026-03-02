@@ -193,6 +193,8 @@ This project progressed through multiple focused sessions. Brief highlights by s
   - Validation & commits: build-verified and tested across devices/browsers — only remaining minor Gboard top-bar stutter attributed to Gboard, not the app.
   ESC to unquote: pressing Esc now removes the quoted message.
   - Quoted-preview polish: quote-preview cross stays perfectly circular, slightly larger hit area; long quote text is responsively truncated with an ellipsis (no visual distortion) across all screen sizes (touch + non-touch).
+    - Admin panel: Tables are now fully responsive. Message Log table uses horizontal scroll only when needed; Users table never scrolls horizontally and always fits on mobile.
+    - Table word-break: Table cells now wrap only at word boundaries, never splitting words mid-character, for a cleaner look.
   - Scroll-to-bottom positioning: repositioned so it never overlaps send/other buttons — on desktop it's raised above the send button; on mobile it's placed just above the quoted-preview.
   - Menu/reaction toggles: clicking the same react icon or three-dots now toggles (closes) the menu instead of blinking.
   - Prevent quoting deleted messages on touch: blocked quoting of deleted messages on touchscreen devices (non-touch behavior unchanged).
