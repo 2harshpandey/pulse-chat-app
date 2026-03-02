@@ -12,6 +12,10 @@ on:
       - '.github/workflows/main_pulse-chat-backend-harshpandey.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read        # minimum needed for checkout
+  id-token: none        # no OIDC token requests
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest

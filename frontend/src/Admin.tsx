@@ -1,6 +1,34 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import styled from 'styled-components';
 
+/**
+ * Sanitizes a URL before using it as an href/src attribute.
+ * Rejects javascript:, data:, and any non-http/https protocol to prevent XSS.
+ */
+const sanitizeUrl = (url: string | undefined | null): string => {
+  if (!url) return '';
+  try {
+    const { protocol } = new URL(url);
+    return (protocol === 'https:' || protocol === 'http:') ? url : '';
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Returns true only when the URL hostname is exactly tenor.com or a subdomain.
+ * A simple .includes('tenor.com') check can be bypassed via path/query embedding.
+ */
+const isTenorUrl = (url: string | undefined | null): boolean => {
+  if (!url) return false;
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'tenor.com' || hostname.endsWith('.tenor.com');
+  } catch {
+    return false;
+  }
+};
+
 const AdminContainer = styled.div`
   padding: 2rem;
   background-color: #f7fafc;
@@ -424,6 +452,8 @@ const Admin = () => {
   });
   const ws = useRef<WebSocket | null>(null);
   const activityLogRef = useRef<HTMLDivElement>(null);
+  // Holds the authenticated password in memory only — never stored in web storage.
+  const passwordRef = useRef<string>('');
 
   // Filter states
   const [filterMessageId, setFilterMessageId] = useState('');
@@ -440,45 +470,11 @@ const Admin = () => {
   useEffect(() => {
     console.log('Users state updated:', users);
   }, [users]);
-  
-  useEffect(() => {
-    const checkAuthAndFetchData = async () => {
-      const storedPassword = sessionStorage.getItem('admin-password');
-      if (storedPassword) {
-        setIsLoading(true);
-        try {
-          const [usersResponse, historyResponse, serverLogsResponse] = await Promise.all([
-            fetch(`${process.env.REACT_APP_API_URL}/api/admin/users`, { headers: { 'x-admin-password': storedPassword } }),
-            fetch(`${process.env.REACT_APP_API_URL}/api/admin/history`, { headers: { 'x-admin-password': storedPassword } }),
-            fetch(`${process.env.REACT_APP_API_URL}/api/admin/server-logs`, { headers: { 'x-admin-password': storedPassword } })
-          ]);
-
-          if (usersResponse.ok && historyResponse.ok && serverLogsResponse.ok) {
-            const usersData = await usersResponse.json();
-            console.log('Users data:', usersData);
-            const historyData = await historyResponse.json();
-            const serverLogsData = await serverLogsResponse.text();
-            setUsers(usersData);
-            setHistoryLogs(historyData.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-            setServerLogs(serverLogsData.split('\n').reverse());
-            setIsAuthenticated(true);
-          } else {
-            sessionStorage.removeItem('admin-password');
-          }
-        } catch (err) {
-          console.error("Failed to fetch admin data", err);
-          sessionStorage.removeItem('admin-password');
-        }
-        setIsLoading(false);
-      }
-    };
-    checkAuthAndFetchData();
-  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const storedPassword = sessionStorage.getItem('admin-password');
+    const storedPassword = passwordRef.current;
     if (!storedPassword) return;
 
     const wsUrl = `${process.env.REACT_APP_API_URL?.replace('http', 'ws') || 'ws://localhost:8080'}?admin=true`;
@@ -537,7 +533,7 @@ const Admin = () => {
       ]);
 
       if (usersResponse.ok && historyResponse.ok && serverLogsResponse.ok) {
-        sessionStorage.setItem('admin-password', password);
+        passwordRef.current = password; // Store in memory only, not in web storage.
         const usersData = await usersResponse.json();
         const historyData = await historyResponse.json();
         const serverLogsData = await serverLogsResponse.text();
@@ -556,6 +552,7 @@ const Admin = () => {
   
   const handleLogout = () => {
     if (ws.current) ws.current.close();
+    passwordRef.current = '';
     sessionStorage.removeItem('admin-password');
     sessionStorage.removeItem('admin-activity-logs');
     setIsAuthenticated(false);
@@ -565,7 +562,7 @@ const Admin = () => {
 
   const handlePermanentClear = async () => {
     const enteredPassword = prompt("This is a destructive action. Please re-enter the admin password to proceed.");
-    const storedPassword = sessionStorage.getItem('admin-password');
+    const storedPassword = passwordRef.current;
 
     if (enteredPassword !== storedPassword) {
       alert("Incorrect password.");
@@ -596,7 +593,7 @@ const Admin = () => {
   };
 
   const handleRefreshServerLogs = async () => {
-    const storedPassword = sessionStorage.getItem('admin-password');
+    const storedPassword = passwordRef.current;
     if (storedPassword) {
       try {
         const serverLogsResponse = await fetch(`${process.env.REACT_APP_API_URL}/api/admin/server-logs`, { headers: { 'x-admin-password': storedPassword } });
@@ -629,9 +626,10 @@ const Admin = () => {
       if (!content) return '"[Empty]"';
       const text = content.text || '';
       if (content.url) {
-        const isGif = content.url.includes('tenor.com');
+        const isGif = isTenorUrl(content.url);
         const fileName = content.originalName || (isGif ? 'GIF' : 'Uploaded File');
-        return <>{text && `"${text}" `}<a href={content.url} target="_blank" rel="noopener noreferrer">[{fileName}]</a></>;
+        const safeHref = sanitizeUrl(content.url);
+        return <>{text && `"${text}" `}{safeHref ? <a href={safeHref} target="_blank" rel="noopener noreferrer">[{fileName}]</a> : <span>[{fileName}]</span>}</>;
       }
       return `"${text}"`;
     };

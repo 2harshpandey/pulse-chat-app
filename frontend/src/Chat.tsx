@@ -9,7 +9,10 @@ import Auth from './Auth';
 const getUserId = (): string => {
   let userId = localStorage.getItem('pulseUserId');
   if (!userId) {
-    userId = Date.now().toString() + Math.random().toString(36).substring(2);
+    // Use crypto.getRandomValues() for a cryptographically secure user ID.
+    const array = new Uint32Array(3);
+    window.crypto.getRandomValues(array);
+    userId = Date.now().toString(36) + Array.from(array, n => n.toString(36)).join('');
     localStorage.setItem('pulseUserId', userId);
   }
   return userId;
@@ -30,16 +33,18 @@ const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.
  * Falls back to opening in a new tab if the fetch fails or the host is not trusted.
  */
 const downloadFile = async (url: string, filename: string): Promise<void> => {
+  // Parse and validate first — do nothing if URL is invalid or host is not trusted.
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { return; }
+  const { hostname, protocol } = parsed;
+  const isTrustedHost =
+    (protocol === 'https:' || protocol === 'http:') &&
+    ALLOWED_DOWNLOAD_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
+  if (!isTrustedHost) return; // Silently reject untrusted hosts — no redirect.
+  // Use the parsed/normalised href so every downstream call uses the validated value.
+  const safeUrl = parsed.href;
   try {
-    // Validate URL host against allowlist before fetching (SSRF prevention).
-    let parsed: URL;
-    try { parsed = new URL(url); } catch { window.open(url, '_blank', 'noopener,noreferrer'); return; }
-    const { hostname, protocol } = parsed;
-    const isTrustedHost =
-      (protocol === 'https:' || protocol === 'http:') &&
-      ALLOWED_DOWNLOAD_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
-    if (!isTrustedHost) { window.open(url, '_blank', 'noopener,noreferrer'); return; }
-    const response = await fetch(url);
+    const response = await fetch(safeUrl);
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -50,7 +55,8 @@ const downloadFile = async (url: string, filename: string): Promise<void> => {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
   } catch {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    // Fetch failed — fall back to opening the already-validated URL in a new tab.
+    window.open(safeUrl, '_blank', 'noopener,noreferrer');
   }
 };
 
@@ -2467,7 +2473,7 @@ function Chat() {
 
       let replyText = replyingTo.text || 'Message';
       if (!replyingTo.text) {
-        if (replyingTo.url?.includes('tenor.com')) {
+        if (isTenorUrl(replyingTo.url)) {
           replyText = 'GIF';
         } else if (replyingTo.type === 'image') {
           replyText = 'Image';
@@ -3264,7 +3270,7 @@ function Chat() {
                 <ReplyText><p>Replying to {replyingTo.username}</p><span>
                   {(() => {
                     if (replyingTo.text) return replyingTo.text;
-                    if (replyingTo.url?.includes('tenor.com')) return 'GIF';
+                    if (isTenorUrl(replyingTo.url)) return 'GIF';
                     if (replyingTo.type === 'image') return 'Image';
                     if (replyingTo.type === 'video') return 'Video';
                     return 'Message';

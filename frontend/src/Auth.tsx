@@ -6,7 +6,10 @@ import { UserProfile } from './UserContext'; // Import the full profile type
 const getUserId = (): string => {
   let userId = localStorage.getItem('pulseUserId');
   if (!userId) {
-    userId = Date.now().toString() + Math.random().toString(36).substring(2);
+    // Use crypto.getRandomValues() for a cryptographically secure user ID.
+    const array = new Uint32Array(3);
+    window.crypto.getRandomValues(array);
+    userId = Date.now().toString(36) + Array.from(array, n => n.toString(36)).join('');
     localStorage.setItem('pulseUserId', userId);
   }
   return userId;
