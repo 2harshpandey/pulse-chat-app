@@ -64,6 +64,72 @@ const EmojiPickerWrapper = styled.div`
   animation: ${fadeInScale} 0.3s ease-out forwards;
 `;
 
+const pulseBorderAnim = keyframes`
+  0%, 100% { border-color: rgba(99, 179, 237, 0.5); box-shadow: 0 0 0 0 rgba(99, 179, 237, 0); }
+  50% { border-color: rgba(147, 210, 255, 0.95); box-shadow: 0 0 28px 6px rgba(99, 179, 237, 0.18); }
+`;
+
+const floatAnim = keyframes`
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+`;
+
+const DragDropOverlay = styled.div<{ $isVisible: boolean }>`
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: ${props => props.$isVisible ? 'all' : 'none'};
+  opacity: ${props => props.$isVisible ? 1 : 0};
+  transition: opacity 0.2s ease;
+  background: rgba(10, 18, 35, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+`;
+
+const DragDropCard = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 48px 72px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 2.5px dashed rgba(99, 179, 237, 0.55);
+  border-radius: 28px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: ${pulseBorderAnim} 2s ease-in-out infinite;
+  @media (max-width: 768px) {
+    padding: 36px 44px;
+    gap: 14px;
+  }
+`;
+
+const DragDropIconWrapper = styled.div`
+  color: rgba(147, 210, 255, 0.92);
+  animation: ${floatAnim} 3s ease-in-out infinite;
+  filter: drop-shadow(0 4px 16px rgba(99, 179, 237, 0.4));
+`;
+
+const DragDropTitle = styled.p`
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.97);
+  letter-spacing: -0.015em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  @media (max-width: 768px) { font-size: 1.25rem; }
+`;
+
+const DragDropSubtitle = styled.p`
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.52);
+  letter-spacing: 0.02em;
+  @media (max-width: 768px) { font-size: 0.82rem; }
+`;
+
 const AppContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -323,6 +389,24 @@ const AttachButton = styled(SendButton)`
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
 `;
+const FileAttachmentCard = styled.a`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(0,0,0,0.07);
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.1);
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+  max-width: 260px;
+  &:hover { background: rgba(0,0,0,0.13); }
+  svg { flex-shrink: 0; }
+  span { font-size: 0.85rem; font-weight: 500; word-break: break-all; opacity: 0.85; }
+`;
+
 const MediaContent = styled.div`
   user-select: none;
   animation: ${fadeInScale} 0.3s ease-out forwards;
@@ -1042,8 +1126,8 @@ const SystemMessage = styled.div`
 `;
 
 // --- INTERFACES ---
-interface ReplyContext { id: string; username: string; text: string; type: 'text' | 'image' | 'video'; }
-interface Message { id: string; userId: string; username: string; type: 'text' | 'image' | 'video' | 'system_notification'; text?: string; url?: string; originalName?: string; timestamp: string; reactions?: { [emoji: string]: { userId: string, username: string }[] }; edited?: boolean; replyingTo?: ReplyContext; isDeleted?: boolean; deletedBy?: string; isUploading?: boolean; uploadError?: boolean; }
+interface ReplyContext { id: string; username: string; text: string; type: 'text' | 'image' | 'video' | 'file'; }
+interface Message { id: string; userId: string; username: string; type: 'text' | 'image' | 'video' | 'file' | 'system_notification'; text?: string; url?: string; originalName?: string; timestamp: string; reactions?: { [emoji: string]: { userId: string, username: string }[] }; edited?: boolean; replyingTo?: ReplyContext; isDeleted?: boolean; deletedBy?: string; isUploading?: boolean; uploadError?: boolean; }
 interface Gif { id: string; preview: string; url: string; }
 
 // --- CHILD COMPONENTS ---
@@ -1125,6 +1209,21 @@ const renderMessageContent = (
     return (
       <MediaContent>
         <VideoPlayer src={msg.url} onPointerDown={onMediaPointerDown} />
+        {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{msg.text}</MessageText>}
+      </MediaContent>
+    );
+  }
+
+  if (msg.type === 'file' || (msg.url && !isImage && !isVideo)) {
+    return (
+      <MediaContent>
+        <FileAttachmentCard href={msg.url} target="_blank" rel="noopener noreferrer" download={msg.originalName}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <span>{msg.originalName || 'Download file'}</span>
+        </FileAttachmentCard>
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{msg.text}</MessageText>}
       </MediaContent>
     );
@@ -1639,6 +1738,8 @@ function Chat() {
   // Must be a ref (not state) so it doesn't trigger re-renders.
   const hasInitialScrolled = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounterRef = useRef(0);
+  const [isDragging, setIsDragging] = useState(false);
   const deleteMenuRef = useRef<HTMLDivElement>(null!);
   const gifPickerRef = useRef<HTMLDivElement>(null!);
   const attachmentMenuRef = useRef<HTMLDivElement>(null!);
@@ -1899,6 +2000,49 @@ function Chat() {
     return () => document.removeEventListener('keydown', handler);
   }, [replyingTo]);
 
+  // ── Drag-and-drop file upload ──────────────────────────────────────
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes('Files') ?? false;
+
+    const onDragEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragCounterRef.current++;
+      setIsDragging(true);
+    };
+    const onDragOver = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    };
+    const onDragLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      dragCounterRef.current--;
+      if (dragCounterRef.current <= 0) {
+        dragCounterRef.current = 0;
+        setIsDragging(false);
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (file) { setStagedFile(file); setStagedGif(null); }
+    };
+
+    document.addEventListener('dragenter', onDragEnter);
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragenter', onDragEnter);
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('dragleave', onDragLeave);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useLayoutEffect(() => {
     const chatContainer = chatContainerRef.current;
     if (!chatContainer || messages.length === 0) return;
@@ -1992,7 +2136,7 @@ function Chat() {
         id: tempId,
         userId: userIdRef.current,
         username: userContext.profile.username,
-        type: stagedFile.type.startsWith('image') ? 'image' : 'video',
+        type: stagedFile.type.startsWith('image/') ? 'image' : stagedFile.type.startsWith('video/') ? 'video' : 'file',
         url: URL.createObjectURL(stagedFile),
         text: inputMessage,
         timestamp: new Date().toISOString(),
@@ -2391,6 +2535,10 @@ function Chat() {
     }
   };
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => { if (event.target.files?.[0]) { setStagedFile(event.target.files[0]); setStagedGif(null); } };
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const file = e.clipboardData?.files?.[0];
+    if (file) { e.preventDefault(); setStagedFile(file); setStagedGif(null); }
+  };
   const handleGifSelect = (gif: Gif) => { setStagedGif(gif); setStagedFile(null); setShowGifPicker(false); };
 
 
@@ -2398,6 +2546,19 @@ function Chat() {
   return (
     <>
       <GlobalStyle />
+      <DragDropOverlay $isVisible={isDragging}>
+        <DragDropCard>
+          <DragDropIconWrapper>
+            <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="16 16 12 12 8 16"/>
+              <line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+          </DragDropIconWrapper>
+          <DragDropTitle>Drop your file here</DragDropTitle>
+          <DragDropSubtitle>Images, videos, PDFs and more — release to upload</DragDropSubtitle>
+        </DragDropCard>
+      </DragDropOverlay>
       {emojiPickerPosition && (
         <div
           ref={emojiPickerRef}
@@ -2613,7 +2774,14 @@ function Chat() {
                     <FilePreviewImage src={URL.createObjectURL(stagedFile)} alt="Preview" />
                   ) : stagedFile.type.startsWith('video/') ? (
                     <video src={URL.createObjectURL(stagedFile)} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
-                  ) : null}
+                  ) : (
+                    <div style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e2e8f0', borderRadius: '8px', flexShrink: 0 }}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5568" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                    </div>
+                  )}
                   <FilePreviewInfo>{stagedFile.name}</FilePreviewInfo>
                   <CancelPreviewButton onClick={() => setStagedFile(null)}>&times;</CancelPreviewButton>
                 </FilePreviewContainer>
@@ -2660,9 +2828,10 @@ function Chat() {
                   value={inputMessage}
                   onChange={handleInputChange}
                   onKeyDown={handleInputKeyDown}
+                  onPaste={handlePaste}
                 />
                 <SendButton onMouseDown={(e) => e.preventDefault()} onClick={handleSendMessage} disabled={(!inputMessage.trim() && !stagedFile && !stagedGif)}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></SendButton>
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*" />
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt" />
               </InputContainer>
             </>
               )}
