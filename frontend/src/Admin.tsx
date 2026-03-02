@@ -354,8 +354,17 @@ const Td = styled.td`
 const TableWrapper = styled.div`
   width: 100%;
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
   border-radius: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Ensures same number of rows visible on all devices, with scroll for overflow */
+  @media (max-width: 768px) {
+    max-height: 60vh;
+  }
+  @media (max-width: 480px) {
+    max-height: 60vh;
+  }
 `;
 
 const LogoutButton = styled(Button)`
