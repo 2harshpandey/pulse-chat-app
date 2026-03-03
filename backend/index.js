@@ -18,11 +18,29 @@ const rateLimit = require('express-rate-limit');
 
 // --- Rate Limiters ---
 // Prevent brute-force and abuse on public/sensitive endpoints.
+
+// Azure App Service (and some other reverse proxies) sometimes appends the client
+// port to the IP in X-Forwarded-For, e.g. "122.172.137.121:54061".
+// express-rate-limit v8 performs strict IP validation and throws
+// ERR_ERL_INVALID_IP_ADDRESS when it sees a port number.
+// This custom key generator strips any trailing port before the IP is used as
+// the rate-limit key, making it safe on Azure regardless of proxy formatting.
+const getClientIp = (req) => {
+  const raw = req.ip || req.socket?.remoteAddress || 'unknown';
+  // Handle IPv4-mapped IPv6 with port: "::ffff:1.2.3.4" stays as-is (no port).
+  // Handle bare IPv4+port:  "1.2.3.4:5678"  → "1.2.3.4"
+  // Handle bracketed IPv6+port: "[::1]:5678" → "::1"
+  return raw
+    .replace(/^\[(.+)\]:\d+$/, '$1')  // [IPv6]:port  → IPv6
+    .replace(/^(\d+\.\d+\.\d+\.\d+):\d+$/, '$1'); // IPv4:port → IPv4
+};
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,                  // max 20 attempts per window
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { error: 'Too many requests, please try again later.' },
 });
 const uploadLimiter = rateLimit({
@@ -30,6 +48,7 @@ const uploadLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { error: 'Too many uploads, please try again later.' },
 });
 const apiLimiter = rateLimit({
@@ -37,6 +56,7 @@ const apiLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { error: 'Too many requests, please try again later.' },
 });
 const adminLimiter = rateLimit({
@@ -44,6 +64,7 @@ const adminLimiter = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: getClientIp,
   message: { error: 'Too many requests, please try again later.' },
 });
 
