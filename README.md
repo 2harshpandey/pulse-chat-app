@@ -208,7 +208,10 @@ This project progressed through multiple focused sessions. Brief highlights by s
   - Added `express-rate-limit` to all admin and destructive backend routes (auth, message log, user list, clear chat, file upload).
   - Resolved all high-severity npm audit vulnerabilities: upgraded `bfj` to `9.1.3` via package.json overrides, removing the transitive `jsonpath` ReDoS vulnerability.
   - Remaining 4 moderate vulnerabilities (`postcss`, `webpack-dev-server`) are dev/build-tool-only with no production exposure; not fixable without migrating away from Create React App.
-  - All fixes build-verified (zero warnings), committed, and pushed.
+  - **Bug fixes:**
+    - GIF button now works reliably on mobile devices (phantom click issue fixed).
+    - Clear chat action now persists across page refreshes (per-user localStorage timestamp).
+    - Duplicate usernames are now prevented in the chat room (server-side and client-side checks).
 
 
 ## Contributing
