@@ -108,6 +108,10 @@ const revokeBlobUrl = (file: File): void => {
   if (url) { URL.revokeObjectURL(url); _blobUrlCache.delete(file); }
 };
 
+// --- CONSTANTS ---
+/** WhatsApp-equivalent message character limit. */
+const MAX_MESSAGE_LENGTH = 65536;
+
 // --- STYLED COMPONENTS ---
 export const GlobalStyle = createGlobalStyle`
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -447,6 +451,16 @@ const MessageInput = styled.textarea`
   &::-webkit-scrollbar-thumb:hover {
     background: #a0aec0;
   }
+`;
+const CharacterCounter = styled.span<{ $warning: boolean }>`
+  position: absolute;
+  bottom: 4px;
+  right: 52px;
+  font-size: 0.7rem;
+  color: ${props => props.$warning ? '#dc2626' : '#94a3b8'};
+  pointer-events: none;
+  user-select: none;
+  line-height: 1;
 `;
 const SendButton = styled.button`
   width: 44px;
@@ -916,11 +930,11 @@ const UserListItem = styled.li<{ index: number }>`
   color: #1e293b;
   font-weight: 500;
   margin-bottom: 0.5rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   animation: ${slideIn} 0.3s ease-out forwards;
   animation-delay: ${props => props.index * 0.1}s;
@@ -2495,6 +2509,7 @@ function Chat() {
       return;
     }
     if (!stagedFile && !stagedGif && !inputMessage.trim()) return;
+    if (inputMessage.length > MAX_MESSAGE_LENGTH) return; // Exceed WhatsApp-style character limit
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !userContext?.profile) return;
 
     const tempId = Date.now().toString();
@@ -3379,7 +3394,13 @@ function Chat() {
                   onChange={handleInputChange}
                   onKeyDown={handleInputKeyDown}
                   onPaste={handlePaste}
+                  maxLength={MAX_MESSAGE_LENGTH}
                 />
+                {inputMessage.length >= MAX_MESSAGE_LENGTH - 200 && (
+                  <CharacterCounter $warning={inputMessage.length >= MAX_MESSAGE_LENGTH - 20}>
+                    {MAX_MESSAGE_LENGTH - inputMessage.length}
+                  </CharacterCounter>
+                )}
                 <SendButton onMouseDown={(e) => e.preventDefault()} onClick={handleSendMessage} disabled={(!inputMessage.trim() && !stagedFile && !stagedGif && stagedFiles.length === 0)}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></SendButton>
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
                 <input type="file" ref={addFileInputRef} onChange={(e) => { if (e.target.files) { setStagedFiles(prev => [...prev, ...Array.from(e.target.files!)]); } if (e.target) e.target.value = ''; }} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
