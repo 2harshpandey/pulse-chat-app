@@ -206,8 +206,12 @@ This project progressed through multiple focused sessions. Brief highlights by s
 - Session 14: Security Hardening & Vulnerability Remediation.
   - Fixed all CodeQL/GitHub scan alerts: DOM-XSS in Chat.tsx (introduced `getBlobUrl` + `sanitizeMediaUrl` taint-breaking pattern with WeakMap cache), XSS in Chat.tsx and Admin.tsx, SSRF/URL-redirect, insecure randomness, and cleartext secret logging on the backend.
   - Added `express-rate-limit` to all admin and destructive backend routes (auth, message log, user list, clear chat, file upload).
+    - resolve-url-loader v5
+    - Replaced `resolve-url-loader@4` (bundled vulnerable `postcss@7.0.39`).  
+    - Migrated to `v5.0.0` for PostCSS v8 compatibility.  
+    - No webpack changes required; build clean, CVE resolved.
   - Resolved all high-severity npm audit vulnerabilities: upgraded `bfj` to `9.1.3` via package.json overrides, removing the transitive `jsonpath` ReDoS vulnerability.
-  - Remaining 4 moderate vulnerabilities (`postcss`, `webpack-dev-server`) are dev/build-tool-only with no production exposure; not fixable without migrating away from Create React App.
+  - Remaining 2 moderate vulnerabilities (`webpack-dev-server`) are dev/build-tool-only with no production exposure; not fixable without migrating away from Create React App.
   - **Bug fixes:**
     - GIF button now works reliably on mobile devices (phantom click issue fixed).
     - Clear chat action now persists across page refreshes (per-user localStorage timestamp).
