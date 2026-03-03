@@ -103,6 +103,14 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 8080;
 
+// Trust the first reverse proxy (Azure App Service / Load Balancer).
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// on every rate-limited request because Azure's proxy injects X-Forwarded-For
+// but Express defaults to ignoring it. This single setting fixes rate-limiter
+// crashes that cause HTTP endpoints (auth, messages, uploads, deletes) to
+// return 500, which in turn breaks the send button, scrolling, and reconnection.
+app.set('trust proxy', 1);
+
 // --- WebSocket Heartbeat (Ping/Pong) ---
 const heartbeatInterval = setInterval(function ping() {
   wss.clients.forEach(function each(ws) {
