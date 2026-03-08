@@ -1082,9 +1082,9 @@ wss.on('connection', (ws, req) => {
         broadcastToAdmins('logged_in_users', Array.from(loggedInUsers.values()));
         broadcastOnlineUsers();
 
-        Message.find().sort({ createdAt: -1 }).limit(50).lean()
+        Message.find().sort({ createdAt: 1 }).lean()
           .then(messages => {
-            ws.send(JSON.stringify({ type: 'history', data: messages.reverse() }));
+            ws.send(JSON.stringify({ type: 'history', data: messages }));
           })
           .catch(err => logger.error('Failed to send initial history:', err));
         break;

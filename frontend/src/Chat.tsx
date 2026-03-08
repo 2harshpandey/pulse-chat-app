@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useContext, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import styled, { createGlobalStyle, keyframes } from 'styled-components';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useDrag } from '@use-gesture/react';
 import { UserContext, UserProfile } from './UserContext';
 import { useTheme } from './ThemeContext';
@@ -247,6 +248,14 @@ const HeaderTitle = styled.h1`
   text-align: center;
   flex-grow: 1;
   transition: color 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  img {
+    height: 32px;
+    width: auto;
+    object-fit: contain;
+  }
 `;
 const LayoutContainer = styled.div`
   display: flex;
@@ -267,11 +276,20 @@ const MessagesContainer = styled.div<{ $isScrollButtonVisible?: boolean; $isMobi
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  overflow-y: auto;
-  padding: 1rem;
+  gap: 0;
+  overflow: hidden;
+  padding: 0 1rem;
   padding-right: ${props => !props.$isMobileView && props.$isScrollButtonVisible ? '64px' : '1rem'};
   transition: padding-right 0.3s ease;
+  /* Virtuoso items need gap via item wrapper since Virtuoso manages its own scroll */
+  & [data-virtuoso-scroller] {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  & [data-test-id="virtuoso-item-list"] > div {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
 `;
 
 /* Wraps MessagesContainer + ScrollToBottomButton so the button is anchored
@@ -2130,10 +2148,12 @@ function Chat() {
   // --- REFS ---
   const ws = useRef<WebSocket | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   // Tracks whether we've done the very first scroll-to-bottom after history loads.
   // Must be a ref (not state) so it doesn't trigger re-renders.
   const hasInitialScrolled = useRef(false);
+  // Tracks whether the user is currently at the bottom of the chat.
+  const isAtBottomRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addFileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
@@ -2538,35 +2558,12 @@ function Chat() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useLayoutEffect(() => {
-    const chatContainer = chatContainerRef.current;
-    if (!chatContainer || messages.length === 0) return;
-
-    if (!hasInitialScrolled.current) {
-      // ── INITIAL LOAD ──────────────────────────────────────────────────────
-      // Force-scroll to the very bottom unconditionally.
-      // The "near-bottom" guard MUST NOT apply here: on first load scrollTop is
-      // 0 and scrollHeight is the full height of all history messages, so the
-      // guard would always fail and leave the user stranded mid-chat.
-      chatContainer.scrollTop = chatContainer.scrollHeight;
+  // Virtuoso handles initial scroll and follow-output automatically.
+  // We only need to track whether the initial load has happened to
+  // avoid premature scroll-to-bottom calls from other effects.
+  useEffect(() => {
+    if (messages.length > 0 && !hasInitialScrolled.current) {
       hasInitialScrolled.current = true;
-
-      // Images/media inside messages may finish loading AFTER this paint and
-      // push scrollHeight higher. Schedule a second scroll for that case.
-      requestAnimationFrame(() => {
-        if (chatContainerRef.current) {
-          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-        }
-      });
-      return;
-    }
-
-    // ── SUBSEQUENT MESSAGES ────────────────────────────────────────────────
-    // Only auto-scroll if the user is already near the bottom (so we don't
-    // yank them away from messages they're reading above).
-    const { scrollHeight, clientHeight, scrollTop } = chatContainer;
-    if (scrollHeight - scrollTop < clientHeight + 200) {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
     }
   }, [messages]);
 
@@ -2781,8 +2778,8 @@ function Chat() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const msgElement = document.getElementById(`message-${replyingTo.id}`);
-        if (!msgElement || !chatContainerRef.current) return;
-        const container = chatContainerRef.current;
+        const container = chatContainerRef.current?.querySelector('[data-virtuoso-scroller]') as HTMLElement || chatContainerRef.current;
+        if (!msgElement || !container) return;
         const containerRect = container.getBoundingClientRect();
         const msgRect = msgElement.getBoundingClientRect();
         const margin = 8;
@@ -2801,7 +2798,7 @@ function Chat() {
     setTimeout(() => {
       // If the menu just closed, deleteMenuRef.current will be null — no-op.
       if (!deleteMenuRef.current || !chatContainerRef.current) return;
-      const container = chatContainerRef.current;
+      const container = chatContainerRef.current.querySelector('[data-virtuoso-scroller]') as HTMLElement || chatContainerRef.current;
       const containerRect = container.getBoundingClientRect();
       const menuRect = deleteMenuRef.current.getBoundingClientRect();
       // Scroll exactly enough so the menu bottom is 12 px above the container edge.
@@ -2973,13 +2970,9 @@ function Chat() {
     return null;
   }, [messages]);
 
-  const handleScroll = useCallback(() => {
-    const container = chatContainerRef.current;
-    if (container) {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const isScrolledUp = (scrollHeight - scrollTop - clientHeight) > 20;
-      setIsScrollToBottomVisible(isScrolledUp);
-    }
+  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    isAtBottomRef.current = atBottom;
+    setIsScrollToBottomVisible(!atBottom);
   }, []);
 
   // Clicking on empty space in the chat area focuses the input (WhatsApp-style).
@@ -2996,19 +2989,27 @@ function Chat() {
   }, [isSelectModeActive, lightboxUrl, isDeleteConfirmationVisible, isMobileView]);
 
   const scrollToMessage = useCallback((messageId: string) => {
-    const element = document.getElementById(`message-${messageId}`);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      element.style.transition = 'background-color 0.5s ease';
-      element.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+    const msgIndex = messages.findIndex(m => m.id === messageId);
+    if (msgIndex !== -1 && virtuosoRef.current) {
+      virtuosoRef.current.scrollToIndex({ index: msgIndex, align: 'center', behavior: 'smooth' });
+      // Highlight after a short delay to allow scroll to complete
       setTimeout(() => {
-        element.style.backgroundColor = 'transparent';
-      }, 1500);
+        const element = document.getElementById(`message-${messageId}`);
+        if (element) {
+          element.style.transition = 'background-color 0.5s ease';
+          element.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+          setTimeout(() => {
+            element.style.backgroundColor = 'transparent';
+          }, 1500);
+        }
+      }, 300);
     }
-  }, []);
+  }, [messages]);
   
   const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (virtuosoRef.current) {
+      virtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: 'end', behavior: 'smooth' });
+    }
   };
 
   const handleEmojiClick = (emojiData: EmojiClickData) => { setInputMessage(prev => prev + emojiData.emoji); };
@@ -3329,7 +3330,7 @@ function Chat() {
       )}
       <AppContainer>
         <Header>
-          <HeaderTitle>Pulse Chat</HeaderTitle>
+          <HeaderTitle><a href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', color: 'inherit' }}><img src="/pulse_logo.png" alt="Pulse" />Pulse Chat</a></HeaderTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ThemeToggleBtn onClick={toggleTheme} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-label="Toggle theme">
               {isDark ? (
@@ -3346,19 +3347,25 @@ function Chat() {
         <LayoutContainer>
           <ChatWindow>
             <MessagesAndScrollWrapper>
-            <MessagesContainer ref={chatContainerRef} onScroll={handleScroll} onClick={handleChatAreaClick} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
-               {messages.map((msg: Message, index: number) => {
+            <MessagesContainer ref={chatContainerRef} onClick={handleChatAreaClick} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
+               <Virtuoso
+                 ref={virtuosoRef}
+                 data={messages}
+                 initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
+                 followOutput={(isAtBottom: boolean) => isAtBottom ? 'smooth' : false}
+                 atBottomStateChange={handleAtBottomStateChange}
+                 atBottomThreshold={20}
+                 increaseViewportBy={{ top: 600, bottom: 200 }}
+                 overscan={200}
+                 style={{ flex: 1, overflow: 'auto' }}
+                 itemContent={(index: number, msg: Message) => {
                           if (msg.type === 'system_notification') {
-                            return <SystemMessage key={msg.id}>{msg.text}</SystemMessage>;
+                            return <SystemMessage>{msg.text}</SystemMessage>;
                           }
-                          // Show the username label only at the top of a new sender group.
-                          // A new group starts when: it's the first message, the previous
-                          // item was a system notification, or the previous sender differs.
                           const prevMsg = messages[index - 1];
                           const showUsername = !prevMsg || prevMsg.type === 'system_notification' || prevMsg.userId !== msg.userId;
                           return (
                             <MessageItem
-                              key={msg.id}
                               msg={msg}
                               showUsername={showUsername}
                               currentUserId={userIdRef.current}
@@ -3392,8 +3399,8 @@ function Chat() {
       handleCancelEdit={handleCancelEdit}
                             />
                           );
-                        })}
-               <div ref={chatEndRef} />
+                 }}
+               />
             </MessagesContainer>
             <ScrollToBottomButton
               $isVisible={isScrollToBottomVisible}

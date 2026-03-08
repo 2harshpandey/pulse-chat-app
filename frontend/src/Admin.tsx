@@ -95,9 +95,17 @@ const Title = styled.h1`
   color: var(--text-heading);
   margin-bottom: 0;
   transition: color 0.3s ease;
-  @media (max-width: 768px) { font-size: 2rem; }
-  @media (max-width: 480px) { font-size: 1.5rem; }
-  @media (max-height: 500px) { font-size: 1.2rem; }
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  img {
+    height: 36px;
+    width: auto;
+    object-fit: contain;
+  }
+  @media (max-width: 768px) { font-size: 2rem; img { height: 30px; } }
+  @media (max-width: 480px) { font-size: 1.5rem; img { height: 26px; } }
+  @media (max-height: 500px) { font-size: 1.2rem; img { height: 22px; } }
 `;
 
 const LoginFormContainer = styled.div`
@@ -154,6 +162,13 @@ const AdminLoginBrand = styled.div`
   text-align: center;
   margin-bottom: 1.75rem;
   width: 100%;
+`;
+
+const AdminBrandLogo = styled.img`
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  margin-bottom: 0.5rem;
 `;
 
 const AdminBrandName = styled.h1`
@@ -326,14 +341,6 @@ const PanelThemeToggle = styled.button`
   svg { width: 18px; height: 18px; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
 `;
 
-const PasswordInputWrapper = styled.div`
-  position: relative;
-  width: 100%;
-  max-width: 300px;
-  margin-bottom: 1rem;
-  @media (max-width: 480px) { max-width: 100%; }
-`;
-
 const HeaderRow = styled.div`
   display: flex;
   align-items: center;
@@ -343,36 +350,6 @@ const HeaderRow = styled.div`
   flex-wrap: wrap;
   flex-shrink: 0;
   @media (max-height: 500px) { margin-bottom: 0.3rem; }
-`;
-
-const EyeIconButton = styled.button`
-  position: absolute;
-  top: 50%;
-  right: 0.25rem;
-  transform: translateY(-50%);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0.5rem;
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s;
-  &:hover { color: var(--text-secondary); }
-`;
-
-const PasswordInput = styled.input`
-  padding: 0.75rem 3rem 0.75rem 1rem;
-  font-size: 1rem;
-  border: 1.5px solid var(--border-secondary);
-  border-radius: 12px;
-  width: 100%;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  transition: all 0.3s ease;
-  &:focus { outline: none; border-color: var(--accent-indigo); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
-  &::placeholder { color: var(--text-muted); }
 `;
 
 const Input = styled.input`
@@ -1419,6 +1396,7 @@ const Admin = () => {
             )}
           </AdminThemeToggle>
           <AdminLoginBrand>
+            <AdminBrandLogo src="/pulse_logo.png" alt="Pulse" />
             <AdminBrandName>Pulse Admin</AdminBrandName>
             <AdminHeartbeatSvg viewBox="0 0 120 30" width="120" height="30">
               <path d="M0 15 L30 15 L38 5 L46 25 L54 8 L60 15 L90 15 L98 5 L106 25 L114 8 L120 15" />
@@ -1464,7 +1442,7 @@ const Admin = () => {
   return (
     <AdminContainer>
       <HeaderRow>
-        <Title>Admin Panel</Title>
+        <Title><img src="/pulse_logo.png" alt="Pulse" />Admin Panel</Title>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {lockdownStatus.isActive && (
             <Badge $color="red"><StatusDot $color="red" /> Lockdown Active</Badge>
