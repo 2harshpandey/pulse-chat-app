@@ -1759,6 +1759,27 @@ const MessageItem = React.memo(({
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reactButtonRef = useRef<HTMLButtonElement>(null!);
   const wasLongPressed = useRef(false);
+
+  // Reset gesture refs when Virtuoso recycles this component for a different message
+  const prevMsgIdRef = useRef(msg.id);
+  useEffect(() => {
+    if (prevMsgIdRef.current !== msg.id) {
+      prevMsgIdRef.current = msg.id;
+      wasLongPressed.current = false;
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+  }, [msg.id]);
+
+  // Reset wasLongPressed when select mode deactivates (e.g. after reacting)
+  useEffect(() => {
+    if (!isSelectModeActive) {
+      wasLongPressed.current = false;
+    }
+  }, [isSelectModeActive]);
+
   const sender = msg.userId === currentUserId ? 'me' : 'other';
   const [isMessageBubbleHovered, setIsMessageBubbleHovered] = useState(false);
 
@@ -1819,7 +1840,7 @@ const MessageItem = React.memo(({
       onTouchStart={handleLongPressStart}
       onTouchEnd={handleLongPressEnd}
     >
-      {isSelectModeActive && (
+      {isSelectModeActive && (!isMobileView || selectedMessages.length > 1) && (
         <SelectCheckboxContainer
           data-checkbox
           onClick={(e) => {
@@ -1840,6 +1861,7 @@ const MessageItem = React.memo(({
           $messageType={msg.type} 
           $isUploading={msg.isUploading} 
           $uploadError={msg.uploadError}
+          style={{ marginBottom: (!isDeleted && msg.reactions && Object.keys(msg.reactions).length > 0) ? '18px' : undefined }}
           onMouseEnter={() => setIsMessageBubbleHovered(true)}
           onMouseLeave={() => setIsMessageBubbleHovered(false)}
         >
@@ -2146,6 +2168,7 @@ function Chat() {
   const attachmentMenuRef = useRef<HTMLDivElement>(null!);
   const attachmentButtonRef = useRef<HTMLButtonElement>(null!);
   const emojiPickerRef = useRef<HTMLDivElement>(null!);
+  const fullEmojiPickerRef = useRef<HTMLDivElement>(null!);
   const emojiButtonRef = useRef<HTMLButtonElement>(null!);
   const messageInputRef = useRef<HTMLTextAreaElement>(null!);
   const userIdRef = useRef<string>(getUserId());
@@ -2451,8 +2474,8 @@ function Chat() {
         if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(target) && !attachmentButtonRef.current?.contains(target)) setIsAttachmentMenuVisible(false);
         if (emojiPickerRef.current && !emojiPickerRef.current.contains(target) && !emojiButtonRef.current?.contains(target)) {
           setEmojiPickerPosition(null);
-          setFullEmojiPickerPosition(null);
         }
+        // Full emoji picker (reactions) is closed exclusively by its own backdrop — not here.
       }, 0);
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -2721,9 +2744,12 @@ function Chat() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleReact = useCallback((messageId: string, emoji: string) => {
-    if (!ws.current || !userContext?.profile) return;
-    const reactionMessage = { type: 'react', messageId, userId: userIdRef.current, emoji };
-    ws.current.send(JSON.stringify(reactionMessage));
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !userContext?.profile || !messageId) return;
+    try {
+      ws.current.send(JSON.stringify({ type: 'react', messageId, userId: userIdRef.current, emoji }));
+    } catch (e) {
+      console.error('Failed to send reaction:', e);
+    }
     setReactionPickerData(null);
   }, [userContext?.profile]);
 
@@ -2851,6 +2877,21 @@ function Chat() {
     setIsSelectModeActive(false);
     setSelectedMessages([]);
   }, []);
+
+  // Re-anchor scroll to bottom when select mode deactivates on mobile.
+  // The select-mode footer swaps with the input footer, changing the chat
+  // area height. Without re-anchoring, a gap appears at the bottom.
+  const prevSelectModeRef = useRef(false);
+  useEffect(() => {
+    if (prevSelectModeRef.current && !isSelectModeActive) {
+      requestAnimationFrame(() => {
+        if (isAtBottomRef.current && virtuosoRef.current) {
+          virtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: 'end', behavior: 'auto' });
+        }
+      });
+    }
+    prevSelectModeRef.current = isSelectModeActive;
+  }, [isSelectModeActive, messages.length]);
 
   const handleBulkDeleteForMe = () => {
     setMessages(prev => prev.filter(m => !selectedMessages.includes(m.id)));
@@ -3267,10 +3308,10 @@ function Chat() {
         <>
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 99, background: 'rgba(0,0,0,0.3)' }}
-          onClick={() => { setFullEmojiPickerPosition(null); setMessageIdForFullEmojiPicker(null); }}
+          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setFullEmojiPickerPosition(null); setMessageIdForFullEmojiPicker(null); }}
         />
         <EmojiPickerWrapper
-          ref={emojiPickerRef}
+          ref={fullEmojiPickerRef}
           style={{
             position: 'fixed',
             bottom: '10px',
@@ -3280,7 +3321,17 @@ function Chat() {
           }}
         >
           <EmojiPicker
-            onEmojiClick={(emojiData) => { handleReact(messageIdForFullEmojiPicker!, emojiData.emoji); setFullEmojiPickerPosition(null); setMessageIdForFullEmojiPicker(null); }}
+            onEmojiClick={(emojiData) => {
+              // Capture the message ID before clearing state
+              const msgId = messageIdForFullEmojiPicker;
+              // Close the picker first
+              setFullEmojiPickerPosition(null);
+              setMessageIdForFullEmojiPicker(null);
+              // Then send the reaction (with the captured ID)
+              if (msgId) {
+                handleReact(msgId, emojiData.emoji);
+              }
+            }}
             theme={isDark ? Theme.DARK : Theme.LIGHT}
             autoFocusSearch={false}
             searchDisabled={isMobileView}
@@ -3293,7 +3344,7 @@ function Chat() {
           ref={reactionPickerRef}
           $sender={reactionPickerData.sender}
           style={(() => {
-            const pickerWidth = 280; // Approximate width of the picker
+            const pickerWidth = 280;
             let top = reactionPickerData.rect.top - 60;
             let left = reactionPickerData.rect.left;
 
@@ -3304,6 +3355,12 @@ function Chat() {
             if (reactionPickerData.sender === 'me') {
               left = reactionPickerData.rect.right - pickerWidth;
             }
+
+            // Clamp within viewport
+            if (left + pickerWidth > window.innerWidth) {
+              left = window.innerWidth - pickerWidth - 10;
+            }
+            if (left < 10) left = 10;
 
             return { top: `${top}px`, left: `${left}px` };
           })()}
