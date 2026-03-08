@@ -290,8 +290,8 @@ const MessagesContainer = styled.div<{ $isScrollButtonVisible?: boolean; $isMobi
     -webkit-overflow-scrolling: touch;
   }
   & [data-test-id="virtuoso-item-list"] > div {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0;
+    padding-bottom: 0;
   }
 `;
 
@@ -316,8 +316,9 @@ const MessageRow = styled.div<{ $sender: string; $isSelected?: boolean; $isActiv
   user-select: none;
   touch-action: pan-y; /* Allow vertical scrolling, while manually handling horizontal drag */
   z-index: ${props => props.$isActiveDeleteMenu ? 40 : 'auto'};
-  /* Reduce the gap from the MessagesContainer when this is a continuation of the same sender */
-  margin-top: ${props => props.$isGrouped ? '-0.55rem' : '0'};
+  /* Grouped = same sender continuation: tight gap; non-grouped = new sender: clear separation */
+  padding-top: ${props => props.$isGrouped ? '3px' : '10px'};
+  padding-bottom: 1px;
 `;
 const Username = styled.div<{ $sender: 'me' | 'other' }>`
   font-size: 0.75rem;
@@ -1098,23 +1099,23 @@ const ReplyText = styled.div`
 `;
 
   const QuotedMessageContainer = styled.div<{ $sender: 'me' | 'other' }>`
-  background: ${props => props.$sender === 'me' ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.05)'};
+  background: ${props => props.$sender === 'me' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(125, 211, 252, 0.08)'};
   padding: 8px;
   border-radius: 8px;
   margin-bottom: 8px;
-  border-left: 3px solid ${props => props.$sender === 'me' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.1)'};
+  border-left: 3px solid ${props => props.$sender === 'me' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(125, 211, 252, 0.6)'};
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
   overflow: hidden;
-  p { font-weight: bold; font-size: 0.8rem; color: black; margin: 0; }
+  p { font-weight: bold; font-size: 0.8rem; color: ${props => props.$sender === 'me' ? 'rgba(255,255,255,0.95)' : '#7dd3fc'}; margin: 0; }
   span {
     font-size: 0.9rem;
     opacity: 0.9;
     display: block;
     word-wrap: break-word;
-    color: black;
+    color: ${props => props.$sender === 'me' ? 'rgba(255,255,255,0.85)' : '#7dd3fc'};
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
