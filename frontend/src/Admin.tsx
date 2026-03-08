@@ -25,6 +25,12 @@ const isTenorUrl = (url: string | undefined | null): boolean => {
   }
 };
 
+// Sanitize a server-issued ID before interpolating it into a URL path segment.
+// Our userIds are base-36 alphanumeric; MongoDB ObjectIds are 24 hex chars.
+// Stripping anything outside [a-zA-Z0-9_-] + percent-encoding prevents path traversal.
+const sanitizePathId = (id: string): string =>
+  encodeURIComponent(id.replace(/[^a-zA-Z0-9_-]/g, ''));
+
 // --- ANIMATIONS ---
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(8px); }
@@ -592,6 +598,78 @@ const ClearHistoryButton = styled(Button)`
   &:hover { background-color: #c53030; }
 `;
 
+// --- Responsive table: visible on desktop, hidden on mobile ---
+const ResponsiveTableWrapper = styled.div`
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  @media (max-width: 640px) { display: none; }
+`;
+
+// --- Mobile card list: hidden on desktop, visible on mobile ---
+const MobileCardList = styled.div`
+  display: none;
+  flex-direction: column;
+  gap: 0.6rem;
+  @media (max-width: 640px) { display: flex; }
+`;
+
+const UserCard = styled.div`
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  animation: ${fadeIn} 0.2s ease-out;
+`;
+
+const UserCardHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+`;
+
+const UserCardMeta = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.6rem;
+`;
+
+const UserCardMetaRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+`;
+
+const UserCardMetaLabel = styled.span`
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+`;
+
+const UserCardMetaValue = styled.span`
+  color: #334155;
+  font-size: 0.8rem;
+  text-align: right;
+  word-break: break-all;
+`;
+
+const UserCardActions = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+`;
+
 // --- INTERFACES ---
 interface UserProfile {
   userId: string;
@@ -907,7 +985,8 @@ const Admin = () => {
 
   const handleRevokeTempLink = async (id: string) => {
     try {
-      const res = await fetch(`${apiUrl}/api/admin/temp-links/${id}/revoke`, { method: 'POST', headers: apiHeaders() });
+      const safeId = sanitizePathId(id);
+      const res = await fetch(`${apiUrl}/api/admin/temp-links/${safeId}/revoke`, { method: 'POST', headers: apiHeaders() });
       if (res.ok) { const updated = await res.json(); setTempLinks(prev => prev.map(l => l._id === id ? updated : l)); }
     } catch (err) { console.error('Failed to revoke temp link', err); }
   };
@@ -924,7 +1003,8 @@ const Admin = () => {
   const handleForceLogout = async (userId: string) => {
     if (!window.confirm('Force logout this user?')) return;
     try {
-      await fetch(`${apiUrl}/api/admin/force-logout/${userId}`, { method: 'POST', headers: apiHeaders() });
+      const safeId = sanitizePathId(userId);
+      await fetch(`${apiUrl}/api/admin/force-logout/${safeId}`, { method: 'POST', headers: apiHeaders() });
       setOnlineUsersList(prev => prev.filter(u => u.userId !== userId));
       setLoggedInUsersList(prev => prev.filter(u => u.userId !== userId));
     } catch (err) { console.error('Failed to force logout', err); }
@@ -950,7 +1030,8 @@ const Admin = () => {
   const handleUnblockUser = async (userId: string) => {
     if (!window.confirm('Unblock this user?')) return;
     try {
-      const res = await fetch(`${apiUrl}/api/admin/unblock-user/${userId}`, { method: 'POST', headers: apiHeaders() });
+      const safeId = sanitizePathId(userId);
+      const res = await fetch(`${apiUrl}/api/admin/unblock-user/${safeId}`, { method: 'POST', headers: apiHeaders() });
       if (res.ok) {
         const data = await res.json();
         setBlockedUsers(prev => prev.map(u => u.userId === userId ? data.blockedUser : u));
@@ -1145,23 +1226,50 @@ const Admin = () => {
             {onlineUsersList.length === 0 ? (
               <EmptyState><span>No users currently online</span></EmptyState>
             ) : (
-              <Table>
-                <thead><tr><Th>Username</Th><Th>User ID</Th><Th>Actions</Th></tr></thead>
-                <tbody>
+              <>
+                <ResponsiveTableWrapper>
+                  <Table>
+                    <thead><tr><Th>Username</Th><Th>User ID</Th><Th>Actions</Th></tr></thead>
+                    <tbody>
+                      {onlineUsersList.map(user => (
+                        <tr key={user.userId}>
+                          <Td><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><StatusDot $color="green" /><strong>{user.username}</strong></div></Td>
+                          <Td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{user.userId}</Td>
+                          <Td>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <SmallDangerButton onClick={() => handleForceLogout(user.userId)}>Force Logout</SmallDangerButton>
+                              <SmallWarningButton onClick={() => handleBlockUser(user.userId, user.username)}>Block</SmallWarningButton>
+                            </div>
+                          </Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </ResponsiveTableWrapper>
+                <MobileCardList>
                   {onlineUsersList.map(user => (
-                    <tr key={user.userId}>
-                      <Td><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><StatusDot $color="green" /><strong>{user.username}</strong></div></Td>
-                      <Td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{user.userId}</Td>
-                      <Td>
-                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          <SmallDangerButton onClick={() => handleForceLogout(user.userId)}>Force Logout</SmallDangerButton>
-                          <SmallWarningButton onClick={() => handleBlockUser(user.userId, user.username)}>Block</SmallWarningButton>
+                    <UserCard key={user.userId}>
+                      <UserCardHeader>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <StatusDot $color="green" />
+                          <strong style={{ fontSize: '1rem' }}>{user.username}</strong>
                         </div>
-                      </Td>
-                    </tr>
+                        <Badge $color="green"><StatusDot $color="green" />Online</Badge>
+                      </UserCardHeader>
+                      <UserCardMeta>
+                        <UserCardMetaRow>
+                          <UserCardMetaLabel>User ID</UserCardMetaLabel>
+                          <UserCardMetaValue style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: '#94a3b8' }}>{user.userId}</UserCardMetaValue>
+                        </UserCardMetaRow>
+                      </UserCardMeta>
+                      <UserCardActions>
+                        <SmallDangerButton onClick={() => handleForceLogout(user.userId)}>Force Logout</SmallDangerButton>
+                        <SmallWarningButton onClick={() => handleBlockUser(user.userId, user.username)}>Block</SmallWarningButton>
+                      </UserCardActions>
+                    </UserCard>
                   ))}
-                </tbody>
-              </Table>
+                </MobileCardList>
+              </>
             )}
 
             <SectionTitle style={{ marginTop: '2rem' }}>
@@ -1171,44 +1279,95 @@ const Admin = () => {
             {loggedInUsersList.length === 0 ? (
               <EmptyState><span>No tracked sessions</span></EmptyState>
             ) : (
-              <Table>
-                <thead><tr><Th>Username</Th><Th>Status</Th><Th>Login Time</Th><Th>Via</Th><Th>Actions</Th></tr></thead>
-                <tbody>
+              <>
+                <ResponsiveTableWrapper>
+                  <Table>
+                    <thead><tr><Th>Username</Th><Th>Status</Th><Th>Login Time</Th><Th>Via</Th><Th>Actions</Th></tr></thead>
+                    <tbody>
+                      {loggedInUsersList.map(user => {
+                        const isOnline = onlineUsersList.some(u => u.userId === user.userId);
+                        return (
+                          <tr key={user.userId}>
+                            <Td><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><StatusDot $color={isOnline ? 'green' : 'gray'} /><strong>{user.username}</strong></div></Td>
+                            <Td><Badge $color={isOnline ? 'green' : 'gray'}>{isOnline ? 'Online' : 'Offline'}</Badge></Td>
+                            <Td style={{ fontSize: '0.85rem' }}>{user.loginTime ? formatDateTime(user.loginTime) : 'N/A'}</Td>
+                            <Td>{user.viaTempLink ? <Badge $color="blue">Temp Link</Badge> : <Badge $color="gray">Password</Badge>}</Td>
+                            <Td>
+                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <SmallDangerButton onClick={() => handleForceLogout(user.userId)}>Force Logout</SmallDangerButton>
+                                <SmallWarningButton onClick={() => handleBlockUser(user.userId, user.username)}>Block</SmallWarningButton>
+                              </div>
+                            </Td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                </ResponsiveTableWrapper>
+                <MobileCardList>
                   {loggedInUsersList.map(user => {
                     const isOnline = onlineUsersList.some(u => u.userId === user.userId);
                     return (
-                      <tr key={user.userId}>
-                        <Td><div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><StatusDot $color={isOnline ? 'green' : 'gray'} /><strong>{user.username}</strong></div></Td>
-                        <Td><Badge $color={isOnline ? 'green' : 'gray'}>{isOnline ? 'Online' : 'Offline'}</Badge></Td>
-                        <Td style={{ fontSize: '0.85rem' }}>{user.loginTime ? formatDateTime(user.loginTime) : 'N/A'}</Td>
-                        <Td>{user.viaTempLink ? <Badge $color="blue">Temp Link</Badge> : <Badge $color="gray">Password</Badge>}</Td>
-                        <Td>
-                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <SmallDangerButton onClick={() => handleForceLogout(user.userId)}>Force Logout</SmallDangerButton>
-                            <SmallWarningButton onClick={() => handleBlockUser(user.userId, user.username)}>Block</SmallWarningButton>
+                      <UserCard key={user.userId}>
+                        <UserCardHeader>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <StatusDot $color={isOnline ? 'green' : 'gray'} />
+                            <strong style={{ fontSize: '1rem' }}>{user.username}</strong>
                           </div>
-                        </Td>
-                      </tr>
+                          <Badge $color={isOnline ? 'green' : 'gray'}>{isOnline ? 'Online' : 'Offline'}</Badge>
+                        </UserCardHeader>
+                        <UserCardMeta>
+                          <UserCardMetaRow>
+                            <UserCardMetaLabel>Login</UserCardMetaLabel>
+                            <UserCardMetaValue>{user.loginTime ? formatDateTime(user.loginTime) : 'N/A'}</UserCardMetaValue>
+                          </UserCardMetaRow>
+                          <UserCardMetaRow>
+                            <UserCardMetaLabel>Via</UserCardMetaLabel>
+                            <UserCardMetaValue>{user.viaTempLink ? <Badge $color="blue">Temp Link</Badge> : <Badge $color="gray">Password</Badge>}</UserCardMetaValue>
+                          </UserCardMetaRow>
+                        </UserCardMeta>
+                        <UserCardActions>
+                          <SmallDangerButton onClick={() => handleForceLogout(user.userId)}>Force Logout</SmallDangerButton>
+                          <SmallWarningButton onClick={() => handleBlockUser(user.userId, user.username)}>Block</SmallWarningButton>
+                        </UserCardActions>
+                      </UserCard>
                     );
                   })}
-                </tbody>
-              </Table>
+                </MobileCardList>
+              </>
             )}
 
             <SectionTitle style={{ marginTop: '2rem' }}>
               All Registered Users ({users.length})
             </SectionTitle>
-            <Table>
-              <thead><tr><Th>User ID</Th><Th>Username</Th></tr></thead>
-              <tbody>
-                {users.map(user => (
-                  <tr key={user.userId}>
-                    <Td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{user.userId}</Td>
-                    <Td>{user.username}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
+            <ResponsiveTableWrapper>
+              <Table>
+                <thead><tr><Th>User ID</Th><Th>Username</Th></tr></thead>
+                <tbody>
+                  {users.map(user => (
+                    <tr key={user.userId}>
+                      <Td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{user.userId}</Td>
+                      <Td>{user.username}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </ResponsiveTableWrapper>
+            <MobileCardList>
+              {users.map(user => (
+                <UserCard key={user.userId}>
+                  <UserCardHeader>
+                    <strong style={{ fontSize: '1rem' }}>{user.username}</strong>
+                  </UserCardHeader>
+                  <UserCardMeta>
+                    <UserCardMetaRow>
+                      <UserCardMetaLabel>User ID</UserCardMetaLabel>
+                      <UserCardMetaValue style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: '#94a3b8' }}>{user.userId}</UserCardMetaValue>
+                    </UserCardMetaRow>
+                  </UserCardMeta>
+                </UserCard>
+              ))}
+            </MobileCardList>
           </ScrollContainer>
         )}
 

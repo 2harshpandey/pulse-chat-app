@@ -134,20 +134,23 @@ const extractIp = (req) => {
 
 // --- Helper: Check if a user is blocked by any fingerprint match ---
 const isUserBlocked = async (userId, ip, userAgent, deviceFingerprint) => {
-  // Check by userId first (fastest)
-  const blockedByUserId = await BlockedUser.findOne({ userId, isBlocked: true });
+  // Type-guard: reject non-string values to prevent NoSQL injection via query objects
+  if (typeof userId !== 'string') return { blocked: false };
+
+  // Check by userId first (fastest) — use $eq to prevent NoSQL injection
+  const blockedByUserId = await BlockedUser.findOne({ userId: { $eq: userId }, isBlocked: true });
   if (blockedByUserId) return { blocked: true, reason: 'User ID is blocked', blockedUser: blockedByUserId };
 
   // Check by IP
-  if (ip && ip !== 'unknown') {
-    const blockedByIp = await BlockedUser.findOne({ 'fingerprints.ips': ip, isBlocked: true });
+  if (ip && ip !== 'unknown' && typeof ip === 'string') {
+    const blockedByIp = await BlockedUser.findOne({ 'fingerprints.ips': { $eq: ip }, isBlocked: true });
     if (blockedByIp) return { blocked: true, reason: 'IP address is blocked', blockedUser: blockedByIp };
   }
 
   // Check by device hash
   if (deviceFingerprint) {
     const hash = generateDeviceHash({ ...deviceFingerprint, userAgent });
-    const blockedByHash = await BlockedUser.findOne({ 'fingerprints.deviceHashes': hash, isBlocked: true });
+    const blockedByHash = await BlockedUser.findOne({ 'fingerprints.deviceHashes': { $eq: hash }, isBlocked: true });
     if (blockedByHash) return { blocked: true, reason: 'Device is blocked', blockedUser: blockedByHash };
   }
 
@@ -385,8 +388,13 @@ app.post('/api/auth/verify-temp', authLimiter, async (req, res) => {
         return res.status(403).json({ success: false, error: 'You have been blocked from this chat room.' });
     }
 
-    // Find and validate the temp link
-    const tempLink = await TempLink.findOne({ token });
+    // Validate token format before querying — crypto.randomBytes(32).hex() always produces 64 hex chars
+    if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) {
+        return res.status(400).json({ success: false, error: 'This link is invalid or has expired.' });
+    }
+
+    // Find and validate the temp link — use $eq to prevent NoSQL injection
+    const tempLink = await TempLink.findOne({ token: { $eq: token } });
     if (!tempLink) {
         await AuditLog.create({ type: 'temp_link_expired_attempt', details: { token: token.substring(0, 8) + '...', userId, username }, ip, userAgent });
         return res.status(404).json({ success: false, error: 'This link is invalid or has expired.' });
@@ -696,7 +704,7 @@ app.post('/api/admin/force-logout/:userId', adminLimiter, adminAuth, async (req,
 // --- Block/Unblock User Routes ---
 app.post('/api/admin/block-user', adminLimiter, adminAuth, async (req, res) => {
     const { userId, username, reason } = req.body;
-    if (!userId) return res.status(400).json({ error: 'userId is required.' });
+    if (!userId || typeof userId !== 'string') return res.status(400).json({ error: 'userId is required and must be a string.' });
 
     try {
         // Gather all known fingerprints for this user
@@ -737,8 +745,8 @@ app.post('/api/admin/block-user', adminLimiter, adminAuth, async (req, res) => {
             }
         });
 
-        // Create or update block entry
-        let blockedUser = await BlockedUser.findOne({ userId });
+        // Create or update block entry — use $eq to prevent NoSQL injection
+        let blockedUser = await BlockedUser.findOne({ userId: { $eq: userId } });
         if (blockedUser) {
             blockedUser.isBlocked = true;
             blockedUser.blockedAt = new Date();
@@ -792,7 +800,7 @@ app.post('/api/admin/unblock-user/:userId', adminLimiter, adminAuth, async (req,
     const { userId } = req.params;
     try {
         const blockedUser = await BlockedUser.findOneAndUpdate(
-            { userId, isBlocked: true },
+            { userId: { $eq: userId }, isBlocked: true },
             { isBlocked: false, unblockedAt: new Date() },
             { new: true }
         );
