@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useContext, useLayoutEffect, useCallback } from 'react';
 import styled, { createGlobalStyle, keyframes } from 'styled-components';
-import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import { useDrag } from '@use-gesture/react';
 import { UserContext, UserProfile } from './UserContext';
+import { useTheme } from './ThemeContext';
 import { useParams } from 'react-router-dom';
 import Auth from './Auth';
 
@@ -117,23 +118,12 @@ const MAX_MESSAGE_LENGTH = 65536;
 export const GlobalStyle = createGlobalStyle`
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body, #root { height: 100%; overflow: hidden; overscroll-behavior: none; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f7fafc; color: #2d3748; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: var(--bg-primary); color: var(--text-primary); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; transition: background-color 0.3s ease, color 0.3s ease; }
   * { -webkit-tap-highlight-color: transparent; }
-  /* Scrollbar styles for webkit browsers */
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: #cbd5e0;
-    border-radius: 4px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #a0aec0;
-  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 `;
 
 const slideIn = keyframes`
@@ -234,28 +224,29 @@ const AppContainer = styled.div`
   height: 100%;
 `;
 const Header = styled.header`
-  background-color: white;
+  background-color: var(--bg-header);
   padding: 1rem;
-  border-bottom: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-sm);
   flex-shrink: 0;
-  z-index: 50; /* Increased z-index to be above the sidebar */
+  z-index: 50;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
   animation: ${slideIn} 0.5s ease-out forwards;
 
   @media (max-width: 768px) {
-    padding: 0.5rem 1rem; /* Further reduced padding on mobile */
+    padding: 0.5rem 1rem;
   }
 `;
 const HeaderTitle = styled.h1`
   font-size: 1.25rem;
   font-weight: bold;
-  color: #2d3748;
+  color: var(--text-heading);
   text-align: center;
   flex-grow: 1;
+  transition: color 0.3s ease;
 `;
 const LayoutContainer = styled.div`
   display: flex;
@@ -317,17 +308,24 @@ const Username = styled.div<{ $sender: 'me' | 'other' }>`
   background-color: ${props => props.$sender === 'me' ? '#DBEAFE' : '#F1F5F9'};
   color: ${props => props.$sender === 'me' ? '#1E40AF' : '#475569'};
   text-shadow: none;
+  transition: background-color 0.3s ease, color 0.3s ease;
+
+  [data-theme='dark'] & {
+    background-color: ${props => props.$sender === 'me' ? 'rgba(59,130,246,0.2)' : 'var(--bg-hover)'};
+    color: ${props => props.$sender === 'me' ? '#93c5fd' : 'var(--text-secondary)'};
+  }
 `;
 const MobileReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
   position: absolute;
   top: -40px;
   z-index: 30;
-  background: white;
+  background: var(--bg-elevated);
   border-radius: 20px;
   padding: 4px 8px;
   display: flex;
   gap: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-primary);
   animation: ${fadeInScale} 0.2s ease-out forwards;
 
   ${props => props.$sender === 'me' 
@@ -340,13 +338,13 @@ const MessageBubble = styled.div<{ $sender: string; $messageType: string; $isUpl
   max-width: 75%;
   padding: 0.5rem 1rem;
   border-radius: 1.25rem;
-  background-color: ${props => props.$sender === 'me' ? '#3B82F6' : 'white'};
-  color: ${props => props.$sender === 'me' ? 'white' : '#2d3748'};
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  background-color: ${props => props.$sender === 'me' ? '#3B82F6' : 'var(--bg-message-other)'};
+  color: ${props => props.$sender === 'me' ? 'white' : 'var(--text-primary)'};
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   min-width: ${props => props.$messageType === 'text' ? '6rem' : '0'};
   opacity: ${props => props.$isUploading ? 0.5 : 1};
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease;
   border: ${props => props.$uploadError ? '2px solid red' : 'none'};
 `;
 
@@ -394,15 +392,16 @@ const Timestamp = styled.div<{ $sender: string }>`
   margin-top: 0.1rem;
   text-align: right;
   white-space: nowrap;
-  color: ${props => props.$sender === 'me' ? '#bfdbfe' : '#a0aec0'};
+  color: ${props => props.$sender === 'me' ? '#bfdbfe' : 'var(--text-muted)'};
   user-select: none;
+  transition: color 0.3s ease;
 `;
 const Footer = styled.footer`
-  background-color: white;
-  border-top: 1px solid #e2e8f0;
+  background-color: var(--bg-header);
+  border-top: 1px solid var(--border-primary);
   flex-shrink: 0;
   z-index: 10;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 `;
 const InputContainer = styled.div`
   position: relative;
@@ -424,7 +423,7 @@ const ActionButtonsContainer = styled.div`
 const MessageInput = styled.textarea`
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--border-secondary);
   border-radius: 0.75rem;
   transition: all 0.2s;
   font-family: inherit;
@@ -433,27 +432,21 @@ const MessageInput = styled.textarea`
   resize: none;
   max-height: 120px;
   overflow-y: hidden;
-  touch-action: auto; /* Allow native text selection */
+  touch-action: auto;
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  background: var(--bg-input);
+  color: var(--text-primary);
   &:focus { 
     outline: none; 
     border-color: #3B82F6; 
     box-shadow: 0 0 0 2px #bfdbfe; 
   }
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: #cbd5e0;
-    border-radius: 4px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: #a0aec0;
-  }
+  &::placeholder { color: var(--text-muted); }
+  &::-webkit-scrollbar { width: 8px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+  &::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 `;
 const CharacterCounter = styled.span<{ $warning: boolean }>`
   position: absolute;
@@ -491,10 +484,10 @@ const SendButton = styled.button`
   }
 `;
 const AttachButton = styled(SendButton)`
-    background-color: #e2e8f0;
-    color: #4a5568;
+    background-color: var(--bg-hover);
+    color: var(--text-secondary);
     &:hover { 
-      background-color: #cbd5e0; 
+      background-color: var(--border-primary); 
       transform: scale(1.1);
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
@@ -780,14 +773,15 @@ const AttachmentMenuContainer = styled.div<{ isVisible: boolean }>`
   position: absolute;
   bottom: 100%;
   left: 0;
-  background: white;
+  background: var(--bg-elevated);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: var(--shadow-md);
   z-index: 20;
   overflow: hidden;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-primary);
   display: ${props => props.isVisible ? 'block' : 'none'};
   animation: ${slideIn} 0.2s ease-out forwards;
+  transition: background-color 0.3s ease;
 `;
 
 const AttachmentMenuItem = styled.button`
@@ -798,12 +792,12 @@ const AttachmentMenuItem = styled.button`
   padding: 10px 15px;
   background: none;
   border: none;
-  color: #2d3748;
+  color: var(--text-primary);
   text-align: left;
   font-size: 0.9rem;
   cursor: pointer;
   transition: background-color 0.2s;
-  &:hover { background-color: #f7fafc; }
+  &:hover { background-color: var(--bg-hover); }
 `;
 
 const ReactionsContainer = styled.div<{ $sender: 'me' | 'other' }>`
@@ -831,7 +825,7 @@ const Lightbox = styled.div`
   img { max-width: 90%; max-height: 90%; border-radius: 8px; }
 `;
 const DeleteMenu = styled.div`
-  position: absolute; top: 28px; right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 35; overflow: hidden; border: 1px solid #e2e8f0; pointer-events: all;
+  position: absolute; top: 28px; right: 0; background: var(--bg-elevated); border-radius: 8px; box-shadow: var(--shadow-md); z-index: 35; overflow: hidden; border: 1px solid var(--border-primary); pointer-events: all; transition: background-color 0.3s ease;
   animation: ${fadeInScale} 0.2s ease-out forwards;
 `;
 const DeleteMenuItem = styled.button`
@@ -842,32 +836,32 @@ const DeleteMenuItem = styled.button`
   padding: 10px 15px;
   background: none;
   border: none;
-  color: #2d3748;
+  color: var(--text-primary);
   text-align: left;
   font-size: 0.9rem;
   cursor: pointer;
   transition: background-color 0.2s;
-  &:hover { background-color: #f7fafc; }
+  &:hover { background-color: var(--bg-hover); }
 `;
 const FilePreviewContainer = styled.div`
-  padding: 10px 1rem; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px; background-color: #f7fafc;
+  padding: 10px 1rem; border-top: 1px solid var(--border-primary); display: flex; align-items: center; gap: 10px; background-color: var(--bg-tertiary); transition: background-color 0.3s ease, border-color 0.3s ease;
 `;
 const FilePreviewImage = styled.img`
   width: 50px; height: 50px; border-radius: 8px; object-fit: cover;
 `;
 const FilePreviewInfo = styled.div`
-  flex-grow: 1; font-size: 0.9rem; color: #4a5568;
+  flex-grow: 1; font-size: 0.9rem; color: var(--text-secondary);
 `;
 const CancelPreviewButton = styled.button`
-  background: #e2e8f0; border-radius: 50%; border: none; width: 30px; height: 30px; min-width: 30px; min-height: 30px; flex-shrink: 0; cursor: pointer; font-weight: bold; font-size: 1.1rem; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-hover); border-radius: 50%; border: none; width: 30px; height: 30px; min-width: 30px; min-height: 30px; flex-shrink: 0; cursor: pointer; font-weight: bold; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; color: var(--text-primary);
   transition: background-color 0.2s;
-  &:hover { background-color: #cbd5e0; }
+  &:hover { background-color: var(--border-primary); }
 `;
 const EmojiButton = styled(SendButton)`
-  background-color: #e2e8f0;
-  color: #4a5568;
+  background-color: var(--bg-hover);
+  color: var(--text-secondary);
   &:hover { 
-    background-color: #cbd5e0; 
+    background-color: var(--border-primary); 
     transform: scale(1.1);
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
@@ -877,10 +871,10 @@ const GifPickerModal = styled.div`
   animation: ${fadeInScale} 0.3s ease-out forwards;
 `;
 const GifPickerContent = styled.div`
-  background: white; width: 90%; max-width: 500px; height: 70%; max-height: 600px; border-radius: 8px; display: flex; flex-direction: column;
+  background: var(--bg-elevated); width: 90%; max-width: 500px; height: 70%; max-height: 600px; border-radius: 8px; display: flex; flex-direction: column; transition: background-color 0.3s ease;
 `;
 const GifSearchBar = styled.input`
-  width: 100%; border: none; border-bottom: 1px solid #e2e8f0; padding: 1rem; font-size: 1rem; &:focus { outline: none; }
+  width: 100%; border: none; border-bottom: 1px solid var(--border-primary); padding: 1rem; font-size: 1rem; background: transparent; color: var(--text-primary); &:focus { outline: none; } &::placeholder { color: var(--text-muted); }
 `;
 const GifGrid = styled.div`
   flex-grow: 1; overflow-y: auto; padding: 1rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px;
@@ -891,18 +885,19 @@ const GifGridItem = styled.img`
 `;
 const UserSidebar = styled.aside<{ $isVisible: boolean }>`
   width: 240px;
-  background: #f8fafc;
-  border-left: 1px solid #e2e8f0;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-primary);
   padding: 1.5rem 1rem;
-  overflow-y: hidden; /* Hide overflow for the sidebar itself */
-  transition: margin-right 0.3s ease, background-color 0.3s ease;
+  overflow-y: hidden;
+  transition: margin-right 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
   flex-shrink: 0;
   user-select: none;
   animation: ${slideIn} 0.5s ease-out forwards;
-  display: flex; /* Make it a flex container */
-  flex-direction: column; /* Arrange children vertically */
+  display: flex;
+  flex-direction: column;
   h2 {
-    color: #1e293b;
+    color: var(--text-heading);
+    transition: color 0.3s ease;
   }
   @media (max-width: 768px) {
     position: fixed;
@@ -930,7 +925,7 @@ const UserList = styled.ul`
   overflow-y: auto; /* Enable scrolling for the user list */
 `;
 const UserListItem = styled.li<{ index: number }>`
-  color: #1e293b;
+  color: var(--text-primary);
   font-weight: 500;
   margin-bottom: 0.5rem;
   white-space: normal;
@@ -939,12 +934,30 @@ const UserListItem = styled.li<{ index: number }>`
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  transition: color 0.3s ease;
   animation: ${slideIn} 0.3s ease-out forwards;
   animation-delay: ${props => props.index * 0.1}s;
 `;
 const MobileUserListToggle = styled(AttachButton)`
   display: none;
   @media (max-width: 768px) { display: flex; }
+`;
+
+const ThemeToggleBtn = styled.button`
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-hover);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  &:hover { transform: scale(1.1); border-color: var(--accent-blue); box-shadow: 0 0 10px rgba(59,130,246,0.15); }
+  &:active { transform: scale(0.95); }
+  svg { width: 18px; height: 18px; transition: transform 0.5s cubic-bezier(0.34,1.56,0.64,1); }
 `;
 
 const ClearChatButton = styled.button`
@@ -955,17 +968,17 @@ const ClearChatButton = styled.button`
   width: 100%;
   padding: 10px 15px;
   margin-top: 1rem;
-  background-color: #64748B; /* A neutral gray */
-  color: white;
-  border: none;
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.2s ease;
+  transition: background-color 0.2s ease, transform 0.2s ease, border-color 0.3s ease;
 
   &:hover {
-    background-color: #475569;
+    background-color: var(--border-primary);
     transform: translateY(-2px);
   }
 
@@ -976,7 +989,7 @@ const ClearChatButton = styled.button`
   svg {
     width: 20px;
     height: 20px;
-    stroke: white;
+    stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -1043,7 +1056,7 @@ const TypingIndicatorContainer = styled.div`
   height: 24px;
   padding: 0 1rem;
   font-style: italic;
-  color: #64748B;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1052,12 +1065,13 @@ const TypingIndicatorContainer = styled.div`
   -moz-user-select: none;
   -ms-user-select: none;
   user-select: none;
+  transition: color 0.3s ease;
 `;
 const ReplyPreviewContainer = styled.div`
-  padding: 10px 1rem; border-bottom: 1px solid #e2e8f0; background-color: #f7fafc; display: flex; align-items: center; gap: 10px; overflow: hidden;
+  padding: 10px 1rem; border-bottom: 1px solid var(--border-primary); background-color: var(--bg-tertiary); display: flex; align-items: center; gap: 10px; overflow: hidden; transition: background-color 0.3s ease, border-color 0.3s ease;
 `;
 const ReplyText = styled.div`
-  flex-grow: 1; font-size: 0.9rem; color: #4a5568; min-width: 0; overflow: hidden;
+  flex-grow: 1; font-size: 0.9rem; color: var(--text-secondary); min-width: 0; overflow: hidden;
   p { font-weight: bold; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   span { opacity: 0.8; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;
@@ -1088,13 +1102,15 @@ const ReplyText = styled.div`
 
 const ReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
   position: absolute;
-  background: white; 
+  background: var(--bg-elevated); 
   border-radius: 20px; 
   padding: 8px; 
   display: flex; 
   gap: 8px; 
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+  box-shadow: var(--shadow-md); 
   z-index: 60;
+  border: 1px solid var(--border-primary);
+  transition: background-color 0.3s ease;
   animation: ${fadeInScale} 0.15s ease-out forwards;
 `;
 const ReactionEmoji = styled.button<{ $isPlusIcon?: boolean }>`
@@ -1370,8 +1386,10 @@ const SelectModeFooter = styled.div`
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background-color: white;
-  border-top: 1px solid #e2e8f0;
+  background-color: var(--bg-header);
+  border-top: 1px solid var(--border-primary);
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+  color: var(--text-primary);
 `;
 
 const DeleteButton = styled(SendButton)`
@@ -1395,8 +1413,8 @@ const ConfirmationModal = styled.div`
 `;
 
 const ConfirmationContent = styled.div`
-  background: white; padding: 2rem; border-radius: 8px; text-align: center;
-  h3 { margin-bottom: 1rem; }
+  background: var(--bg-elevated); padding: 2rem; border-radius: 8px; text-align: center; transition: background-color 0.3s ease, color 0.3s ease;
+  h3 { margin-bottom: 1rem; color: var(--text-heading); }
   div { display: flex; gap: 1rem; justify-content: center; }
 `;
 
@@ -1454,15 +1472,16 @@ const MessageText = styled.p`
 
 const SystemMessage = styled.div`
   align-self: center;
-  background-color: #e9ecef;
-  color: #495057;
+  background-color: var(--bg-hover);
+  color: var(--text-secondary);
   padding: 0.5rem 1rem;
   border-radius: 1.25rem;
   font-size: 0.9rem;
   margin: 0.5rem 0;
   width: fit-content;
   text-align: center;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.3s ease, color 0.3s ease;
 `;
 
 // --- INTERFACES ---
@@ -2029,16 +2048,16 @@ const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
   right: 20px;
   width: 44px;
   height: 44px;
-  background-color: rgba(255, 255, 255, 0.9);
+  background-color: var(--bg-elevated);
   backdrop-filter: blur(10px);
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-primary);
   border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transition: opacity 0.3s ease, transform 0.3s ease;
+  box-shadow: var(--shadow-md);
+  transition: opacity 0.3s ease, transform 0.3s ease, background-color 0.3s ease;
   opacity: ${props => props.$isVisible ? 1 : 0};
   transform: ${props => props.$isVisible ? 'scale(1)' : 'scale(0.8)'};
   pointer-events: ${props => props.$isVisible ? 'auto' : 'none'};
@@ -2047,13 +2066,13 @@ const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
   svg {
     width: 24px;
     height: 24px;
-    stroke: #4a5568;
+    stroke: var(--text-secondary);
     stroke-width: 2.5;
   }
 
   &:hover {
     transform: scale(1.1);
-    background-color: white;
+    background-color: var(--bg-hover);
   }
 
   @media (max-width: 768px) {
@@ -2073,6 +2092,7 @@ const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
 function Chat() {
   const userContext = useContext(UserContext);
   const { token: tempToken } = useParams<{ token?: string }>();
+  const { isDark, toggleTheme } = useTheme();
 
   // --- STATE MANAGEMENT ---
   const [messages, setMessages] = useState<Message[]>([]);
@@ -3237,7 +3257,7 @@ function Chat() {
             return { position: 'absolute' as const, top: `${top}px`, left: `${left}px`, zIndex: 21 };
           })()}
         >
-          <EmojiPicker onEmojiClick={handleEmojiClick} autoFocusSearch={false} />
+          <EmojiPicker onEmojiClick={handleEmojiClick} autoFocusSearch={false} theme={isDark ? Theme.DARK : Theme.LIGHT} />
         </div>
       )}
       {fullEmojiPickerPosition && (
@@ -3264,7 +3284,7 @@ function Chat() {
             } as React.CSSProperties;
           })()}
         >
-          <EmojiPicker onEmojiClick={(emojiData) => { handleReact(messageIdForFullEmojiPicker!, emojiData.emoji); setFullEmojiPickerPosition(null); setMessageIdForFullEmojiPicker(null); }} />
+          <EmojiPicker onEmojiClick={(emojiData) => { handleReact(messageIdForFullEmojiPicker!, emojiData.emoji); setFullEmojiPickerPosition(null); setMessageIdForFullEmojiPicker(null); }} theme={isDark ? Theme.DARK : Theme.LIGHT} />
         </EmojiPickerWrapper>
       )}
        {reactionPickerData && (
@@ -3310,9 +3330,18 @@ function Chat() {
       <AppContainer>
         <Header>
           <HeaderTitle>Pulse Chat</HeaderTitle>
-          <MobileUserListToggle onClick={() => setIsUserListVisible(!isUserListVisible)}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-          </MobileUserListToggle>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <ThemeToggleBtn onClick={toggleTheme} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-label="Toggle theme">
+              {isDark ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              )}
+            </ThemeToggleBtn>
+            <MobileUserListToggle onClick={() => setIsUserListVisible(!isUserListVisible)}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            </MobileUserListToggle>
+          </div>
         </Header>
         <LayoutContainer>
           <ChatWindow>

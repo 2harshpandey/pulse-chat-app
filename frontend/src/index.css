@@ -1,6 +1,5 @@
 /* src/index.css */
 
-/* Using a more modern CSS reset */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -12,10 +11,101 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* ══════════════════════════════════════════
+   Theme CSS Custom Properties
+   ══════════════════════════════════════════ */
+:root,
+[data-theme='light'] {
+  --bg-primary: #f7fafc;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f0f4f8;
+  --bg-elevated: #ffffff;
+  --bg-input: #ffffff;
+  --bg-sidebar: #f8fafc;
+  --bg-header: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-message-other: #ffffff;
+  --bg-code: #1a202c;
+  --bg-filter: #f0f4f8;
+  --bg-tab-active: #ffffff;
+
+  --text-primary: #1a202c;
+  --text-secondary: #4a5568;
+  --text-tertiary: #64748b;
+  --text-muted: #94a3b8;
+  --text-heading: #1e293b;
+
+  --border-primary: #e2e8f0;
+  --border-secondary: #cbd5e0;
+  --border-focus: #3B82F6;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.1);
+
+  --accent-blue: #3B82F6;
+  --accent-blue-hover: #2563EB;
+  --accent-indigo: #4F46E5;
+  --accent-red: #EF4444;
+  --accent-green: #10B981;
+  --accent-yellow: #F59E0B;
+
+  --scrollbar-thumb: #cbd5e0;
+  --scrollbar-thumb-hover: #a0aec0;
+
+  --login-bg: #dde3ed;
+  --login-card-bg: rgba(255, 255, 255, 0.82);
+  --login-card-border: rgba(255, 255, 255, 0.6);
+}
+
+[data-theme='dark'] {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #1e293b;
+  --bg-elevated: #1e293b;
+  --bg-input: #1e293b;
+  --bg-sidebar: #1e293b;
+  --bg-header: #0f172a;
+  --bg-hover: #334155;
+  --bg-message-other: #334155;
+  --bg-code: #0f172a;
+  --bg-filter: #1e293b;
+  --bg-tab-active: #1e293b;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e0;
+  --text-tertiary: #94a3b8;
+  --text-muted: #64748b;
+  --text-heading: #f8fafc;
+
+  --border-primary: #334155;
+  --border-secondary: #475569;
+  --border-focus: #60a5fa;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5);
+
+  --accent-blue: #3B82F6;
+  --accent-blue-hover: #60a5fa;
+  --accent-indigo: #818cf8;
+  --accent-red: #f87171;
+  --accent-green: #34d399;
+  --accent-yellow: #fbbf24;
+
+  --scrollbar-thumb: #475569;
+  --scrollbar-thumb-hover: #64748b;
+
+  --login-bg: #0f172a;
+  --login-card-bg: rgba(30, 41, 59, 0.82);
+  --login-card-border: rgba(51, 65, 85, 0.6);
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-  background-color: #F1F5F9; /* A light gray background */
-  color: #1E293B; /* Dark text for readability */
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }

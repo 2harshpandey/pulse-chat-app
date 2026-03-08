@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import styled, { keyframes, css } from 'styled-components';
+import { useTheme } from './ThemeContext';
 
 /**
  * Sanitizes a URL before using it as an href/src attribute.
@@ -42,15 +43,47 @@ const pulse = keyframes`
   50% { opacity: 0.6; }
 `;
 
+const float1 = keyframes`
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(40px, -60px) scale(1.1); }
+  50% { transform: translate(-20px, 40px) scale(0.95); }
+  75% { transform: translate(30px, 20px) scale(1.05); }
+`;
+
+const float2 = keyframes`
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-50px, 30px) scale(1.05); }
+  50% { transform: translate(30px, -40px) scale(0.9); }
+  75% { transform: translate(-20px, -20px) scale(1.1); }
+`;
+
+const float3 = keyframes`
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(20px, 50px) scale(0.95); }
+  50% { transform: translate(-40px, -30px) scale(1.1); }
+  75% { transform: translate(30px, -20px) scale(1); }
+`;
+
+const drawLine = keyframes`
+  from { stroke-dashoffset: 180; }
+  to { stroke-dashoffset: 0; }
+`;
+
+const shimmer = keyframes`
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+`;
+
 // --- STYLED COMPONENTS ---
 const AdminContainer = styled.div`
   padding: 2rem;
-  background-color: #f7fafc;
+  background-color: var(--bg-primary);
   height: 100vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   animation: ${fadeIn} 0.3s ease-out;
+  transition: background-color 0.3s ease;
   @media (max-width: 768px) { padding: 1.25rem 1rem; }
   @media (max-width: 480px) { padding: 1rem 0.75rem; }
   @media (max-height: 500px) { padding: 0.4rem 0.6rem; }
@@ -59,8 +92,9 @@ const AdminContainer = styled.div`
 const Title = styled.h1`
   font-size: 2.5rem;
   font-weight: bold;
-  color: #1a202c;
+  color: var(--text-heading);
   margin-bottom: 0;
+  transition: color 0.3s ease;
   @media (max-width: 768px) { font-size: 2rem; }
   @media (max-width: 480px) { font-size: 1.5rem; }
   @media (max-height: 500px) { font-size: 1.2rem; }
@@ -72,22 +106,224 @@ const LoginFormContainer = styled.div`
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background-color: #e2e8f0;
-  padding: 1rem;
+  background-color: var(--login-bg);
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: background-color 0.5s ease;
 `;
 
 const LoginBox = styled.div`
   padding: 3rem;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  background: var(--login-card-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--login-card-border);
+  border-radius: 24px;
+  box-shadow: 0 25px 60px -12px rgba(0,0,0,0.15);
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 420px;
-  animation: ${fadeIn} 0.4s ease-out;
-  @media (max-width: 480px) { padding: 2rem 1.5rem; border-radius: 12px; }
+  max-width: 440px;
+  animation: ${fadeIn} 0.6s cubic-bezier(0.16,1,0.3,1);
+  transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  position: relative;
+  z-index: 1;
+  [data-theme='dark'] & { box-shadow: 0 25px 60px -12px rgba(0,0,0,0.5); }
+  @media (max-width: 480px) { padding: 2rem 1.5rem; border-radius: 20px; }
+`;
+
+const AdminOrb = styled.div<{ $color: string; $size: number; $top: string; $left: string; $anim: ReturnType<typeof keyframes> }>`
+  position: absolute;
+  width: ${(p: any) => p.$size}px;
+  height: ${(p: any) => p.$size}px;
+  border-radius: 50%;
+  background: ${(p: any) => p.$color};
+  filter: blur(80px);
+  opacity: 0.6;
+  animation: ${(p: any) => p.$anim} 20s ease-in-out infinite;
+  top: ${(p: any) => p.$top};
+  left: ${(p: any) => p.$left};
+  will-change: transform;
+  pointer-events: none;
+  [data-theme='dark'] & { opacity: 0.25; }
+`;
+
+const AdminLoginBrand = styled.div`
+  text-align: center;
+  margin-bottom: 1.75rem;
+  width: 100%;
+`;
+
+const AdminBrandName = styled.h1`
+  font-size: 2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--text-heading), var(--accent-indigo));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.03em;
+  margin-bottom: 0;
+`;
+
+const AdminHeartbeatSvg = styled.svg`
+  display: block;
+  margin: 0.5rem auto;
+  overflow: visible;
+  path {
+    fill: none;
+    stroke: var(--accent-indigo);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 180;
+    animation: ${drawLine} 1.5s ease-out forwards;
+    filter: drop-shadow(0 0 4px rgba(99, 102, 241, 0.3));
+  }
+`;
+
+const AdminBrandSubtitle = styled.p`
+  font-size: 0.9rem;
+  color: var(--text-tertiary);
+  margin-top: 0.75rem;
+  transition: color 0.3s ease;
+`;
+
+const AdminInputGroup = styled.div<{ $focused?: boolean }>`
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  margin-bottom: 1rem;
+  border-radius: 12px;
+  border: 1.5px solid ${(p: any) => p.$focused ? 'var(--accent-indigo)' : 'var(--border-secondary)'};
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: ${(p: any) => p.$focused ? '0 0 0 3px rgba(99,102,241,0.1)' : 'none'};
+  background: var(--bg-input);
+  overflow: hidden;
+  @media (max-width: 480px) { max-width: 100%; }
+`;
+
+const AdminInputIcon = styled.div<{ $focused?: boolean }>`
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: ${(p: any) => p.$focused ? 'var(--accent-indigo)' : 'var(--text-muted)'};
+  transition: color 0.3s ease;
+  display: flex;
+  align-items: center;
+  z-index: 1;
+  svg { width: 18px; height: 18px; }
+`;
+
+const AdminStyledInput = styled.input`
+  width: 100%;
+  padding: 0.9rem 3rem 0.9rem 2.75rem;
+  border: none;
+  background: transparent;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: color 0.3s ease;
+  &::placeholder { color: var(--text-muted); transition: color 0.3s; }
+`;
+
+const AdminEyeBtn = styled.button`
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.4rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+  z-index: 1;
+  &:hover { color: var(--text-secondary); }
+  svg { width: 18px; height: 18px; }
+`;
+
+const AdminSubmitBtn = styled.button<{ $loading?: boolean }>`
+  width: 100%;
+  max-width: 340px;
+  padding: 0.9rem 1rem;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #4F46E5, #3B82F6);
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  margin-top: 0.5rem;
+  &:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 10px 30px -5px rgba(79,70,229,0.5); }
+  &:active:not(:disabled) { transform: translateY(0); }
+  &:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    background-size: 200% 100%;
+    animation: ${(p: any) => p.$loading ? shimmer : 'none'} 1.5s infinite;
+  }
+  @media (max-width: 480px) { max-width: 100%; }
+`;
+
+const AdminThemeToggle = styled.button`
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  z-index: 2;
+  &:hover { transform: scale(1.1); border-color: var(--accent-blue); }
+  &:active { transform: scale(0.95); }
+  svg { width: 18px; height: 18px; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
+`;
+
+const AdminSecuredLine = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  transition: color 0.3s ease;
+  svg { width: 12px; height: 12px; }
+`;
+
+const PanelThemeToggle = styled.button`
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-hover);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  &:hover { transform: scale(1.1); border-color: var(--accent-blue); box-shadow: 0 0 12px rgba(59,130,246,0.15); }
+  &:active { transform: scale(0.95); }
+  svg { width: 18px; height: 18px; transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
 `;
 
 const PasswordInputWrapper = styled.div`
@@ -118,35 +354,41 @@ const EyeIconButton = styled.button`
   border: none;
   cursor: pointer;
   padding: 0.5rem;
-  color: #9ca3af;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: color 0.2s;
-  &:hover { color: #4a5568; }
+  &:hover { color: var(--text-secondary); }
 `;
 
 const PasswordInput = styled.input`
   padding: 0.75rem 3rem 0.75rem 1rem;
   font-size: 1rem;
-  border: 1px solid #cbd5e0;
-  border-radius: 4px;
+  border: 1.5px solid var(--border-secondary);
+  border-radius: 12px;
   width: 100%;
-  transition: all 0.2s;
-  &:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px #bfdbfe; }
+  background: var(--bg-input);
+  color: var(--text-primary);
+  transition: all 0.3s ease;
+  &:focus { outline: none; border-color: var(--accent-indigo); box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+  &::placeholder { color: var(--text-muted); }
 `;
 
 const Input = styled.input`
   padding: 0.75rem 1rem;
   font-size: 1rem;
   margin-bottom: 1rem;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--border-secondary);
   border-radius: 4px;
   width: 100%;
   max-width: 300px;
   box-sizing: border-box;
+  background: var(--bg-input);
+  color: var(--text-primary);
   transition: all 0.2s;
-  &:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px #bfdbfe; }
+  &:focus { outline: none; border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+  &::placeholder { color: var(--text-muted); }
   @media (max-height: 500px) { padding: 0.28rem 0.5rem; font-size: 0.78rem; }
 `;
 
@@ -180,14 +422,15 @@ const Select = styled.select`
   margin-bottom: 0;
   flex: none;
   min-width: auto;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--border-secondary);
   border-radius: 4px;
-  background-color: white;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
   transition: all 0.2s;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  &:focus { outline: none; border-color: #3B82F6; box-shadow: 0 0 0 2px #bfdbfe; }
+  &:focus { outline: none; border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
   @media (max-height: 500px) { padding: 0.28rem 0.5rem; padding-right: 2rem; font-size: 0.78rem; }
 `;
 
@@ -197,10 +440,11 @@ const FilterContainer = styled.div`
   gap: 0.75rem;
   margin-bottom: 1.5rem;
   padding: 1rem;
-  background-color: #f0f4f8;
+  background-color: var(--bg-filter);
   border-radius: 8px;
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
   flex-shrink: 0;
+  transition: background-color 0.3s ease;
   ${Input}, ${SelectWrapper} {
     flex: 1; min-width: 160px; max-width: none; margin-bottom: 0;
   }
@@ -238,12 +482,13 @@ const ErrorMessage = styled.p`
 
 const TabContainer = styled.div`
   display: flex;
-  border-bottom: 1px solid #cbd5e0;
+  border-bottom: 1px solid var(--border-secondary);
   margin-bottom: -1px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   flex-shrink: 0;
+  transition: border-color 0.3s ease;
   &::-webkit-scrollbar { display: none; }
 `;
 
@@ -252,10 +497,10 @@ const TabButton = styled.button<{ active: boolean }>`
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  background-color: ${(p: any) => p.active ? 'white' : 'transparent'};
-  color: ${(p: any) => p.active ? '#3B82F6' : '#4a5568'};
-  border: 1px solid ${(p: any) => p.active ? '#cbd5e0' : 'transparent'};
-  border-bottom: 1px solid ${(p: any) => p.active ? 'white' : '#cbd5e0'};
+  background-color: ${(p: any) => p.active ? 'var(--bg-tab-active)' : 'transparent'};
+  color: ${(p: any) => p.active ? 'var(--accent-blue)' : 'var(--text-secondary)'};
+  border: 1px solid ${(p: any) => p.active ? 'var(--border-secondary)' : 'transparent'};
+  border-bottom: 1px solid ${(p: any) => p.active ? 'var(--bg-tab-active)' : 'var(--border-secondary)'};
   margin-bottom: -1px;
   border-top-left-radius: 0.25rem;
   border-top-right-radius: 0.25rem;
@@ -263,21 +508,22 @@ const TabButton = styled.button<{ active: boolean }>`
   transition: all 0.2s;
   white-space: nowrap;
   flex-shrink: 0;
-  &:hover { color: #3B82F6; }
+  &:hover { color: var(--accent-blue); }
   @media (max-width: 600px) { padding: 0.6rem 1rem; font-size: 0.875rem; }
   @media (max-width: 380px) { padding: 0.5rem 0.65rem; font-size: 0.78rem; }
 `;
 
 const TabContent = styled.div`
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--border-secondary);
   padding: 2rem;
   border-radius: 0 0.25rem 0.25rem 0.25rem;
-  background-color: white;
+  background-color: var(--bg-secondary);
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
   @media (max-width: 768px) { padding: 1rem 0.85rem; }
   @media (max-width: 480px) { padding: 0.85rem 0.65rem; border-top-right-radius: 0.25rem; }
   @media (max-height: 500px) { padding: 0.4rem 0.5rem; }
@@ -288,6 +534,8 @@ const Table = styled.table`
   border-collapse: collapse;
   margin-top: 1rem;
   font-size: 0.9rem;
+  color: var(--text-primary);
+  transition: color 0.3s ease;
 `;
 
 const WideTable = styled(Table)`
@@ -297,20 +545,23 @@ const WideTable = styled(Table)`
 const Th = styled.th`
   padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid #e2e8f0;
-  background-color: #f7fafc;
+  border-bottom: 1px solid var(--border-primary);
+  background-color: var(--bg-primary);
   font-weight: 600;
-  color: #4a5568;
+  color: var(--text-secondary);
   white-space: nowrap;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
   @media (max-height: 500px) { padding: 0.3rem 0.5rem; font-size: 0.78rem; }
 `;
 
 const Td = styled.td`
   padding: 0.75rem;
   text-align: left;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-primary);
   overflow-wrap: break-word;
   word-break: normal;
+  color: var(--text-primary);
+  transition: border-color 0.3s ease, color 0.3s ease;
   @media (max-height: 500px) { padding: 0.3rem 0.5rem; font-size: 0.78rem; }
 `;
 
@@ -379,7 +630,8 @@ const ActivityLogContainer = styled.div`
   font-family: 'Courier New', Courier, monospace;
   font-size: 0.85rem;
   overflow-y: auto;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-primary);
+  transition: border-color 0.3s ease;
   @media (max-width: 768px) { padding: 0.75rem; font-size: 0.78rem; }
   @media (max-height: 500px) { padding: 0.4rem 0.5rem; font-size: 0.75rem; }
 `;
@@ -398,7 +650,8 @@ const LogViewerContainer = styled.pre`
   font-size: 0.85rem;
   white-space: pre-wrap;
   word-wrap: break-word;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-primary);
+  transition: border-color 0.3s ease;
   @media (max-width: 768px) { padding: 0.75rem; font-size: 0.78rem; }
   @media (max-height: 500px) { padding: 0.4rem 0.5rem; font-size: 0.75rem; }
 `;
@@ -411,14 +664,15 @@ const ActivityLogItem = styled.div`
 const SectionTitle = styled.h3`
   font-size: 1.1rem;
   font-weight: 700;
-  color: #1a202c;
+  color: var(--text-heading);
   margin: 1.5rem 0 0.75rem 0;
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid #e2e8f0;
+  border-bottom: 2px solid var(--border-primary);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
+  transition: color 0.3s ease, border-color 0.3s ease;
   &:first-child { margin-top: 0; }
   @media (max-width: 480px) { font-size: 1rem; margin: 1.25rem 0 0.6rem 0; }
 `;
@@ -429,7 +683,7 @@ const Card = styled.div<{ $variant?: 'default' | 'success' | 'warning' | 'danger
       case 'success': return 'linear-gradient(135deg, #f0fdf4, #dcfce7)';
       case 'warning': return 'linear-gradient(135deg, #fffbeb, #fef3c7)';
       case 'danger': return 'linear-gradient(135deg, #fef2f2, #fee2e2)';
-      default: return 'white';
+      default: return 'var(--bg-secondary)';
     }
   }};
   border: 1px solid ${(p: any) => {
@@ -437,15 +691,15 @@ const Card = styled.div<{ $variant?: 'default' | 'success' | 'warning' | 'danger
       case 'success': return '#86efac';
       case 'warning': return '#fcd34d';
       case 'danger': return '#fca5a5';
-      default: return '#e2e8f0';
+      default: return 'var(--border-primary)';
     }
   }};
   border-radius: 12px;
   padding: 1.25rem;
   margin-bottom: 1rem;
-  transition: all 0.2s;
+  transition: all 0.3s ease;
   animation: ${fadeIn} 0.3s ease-out;
-  &:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  &:hover { box-shadow: var(--shadow-md); }
   @media (max-width: 480px) { padding: 1rem; border-radius: 8px; }
 `;
 
@@ -495,38 +749,40 @@ const StatusDot = styled.span<{ $color: 'green' | 'red' | 'yellow' | 'gray' }>`
 `;
 
 const LinkUrlBox = styled.div`
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   padding: 0.6rem 1rem;
   font-family: 'Courier New', monospace;
   font-size: 0.85rem;
-  color: #334155;
+  color: var(--text-secondary);
   word-break: break-all;
   flex: 1;
   min-width: 200px;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
 `;
 
 const CopyButton = styled.button`
   background: none;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--border-secondary);
   border-radius: 6px;
   padding: 0.35rem 0.6rem;
   cursor: pointer;
-  color: #64748b;
+  color: var(--text-tertiary);
   font-size: 0.75rem;
   transition: all 0.2s;
   white-space: nowrap;
-  &:hover { background: #f1f5f9; border-color: #94a3b8; color: #334155; }
+  &:hover { background: var(--bg-hover); border-color: var(--text-muted); color: var(--text-primary); }
 `;
 
 const UsedByList = styled.div`
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--text-tertiary);
   margin-top: 0.5rem;
+  transition: color 0.3s ease;
 `;
 
 const LockdownPanel = styled.div`
@@ -535,19 +791,20 @@ const LockdownPanel = styled.div`
   gap: 0.5rem;
   align-items: center;
   padding: 1rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-primary);
   margin-bottom: 1rem;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
   @media (max-width: 480px) { padding: 0.75rem; gap: 0.4rem; }
 `;
 
 const LockdownOption = styled.button<{ $active?: boolean }>`
   padding: 0.5rem 1rem;
   border-radius: 8px;
-  border: 1px solid ${(p: any) => p.$active ? '#3B82F6' : '#cbd5e0'};
-  background: ${(p: any) => p.$active ? '#3B82F6' : 'white'};
-  color: ${(p: any) => p.$active ? 'white' : '#4a5568'};
+  border: 1px solid ${(p: any) => p.$active ? '#3B82F6' : 'var(--border-secondary)'};
+  background: ${(p: any) => p.$active ? '#3B82F6' : 'var(--bg-secondary)'};
+  color: ${(p: any) => p.$active ? 'white' : 'var(--text-secondary)'};
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
@@ -566,11 +823,13 @@ const AuditLogEntry = styled.div<{ $type?: string }>`
     if (p.$type?.includes('force')) return '#f97316';
     return '#94a3b8';
   }};
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   margin-bottom: 0.5rem;
   border-radius: 0 6px 6px 0;
   font-size: 0.85rem;
   animation: ${fadeIn} 0.2s ease-out;
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
   @media (max-width: 480px) { padding: 0.5rem 0.6rem; font-size: 0.8rem; }
 `;
 
@@ -588,18 +847,22 @@ const EmptyState = styled.div`
   align-items: center;
   justify-content: center;
   padding: 3rem 1rem;
-  color: #94a3b8;
+  color: var(--text-muted);
   text-align: center;
   gap: 0.75rem;
+  transition: color 0.3s ease;
 `;
 
 const CustomTimeInput = styled.input`
   padding: 0.5rem;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--border-secondary);
   border-radius: 6px;
   font-size: 0.85rem;
   width: 100px;
-  &:focus { outline: none; border-color: #3B82F6; }
+  background: var(--bg-input);
+  color: var(--text-primary);
+  transition: border-color 0.3s ease, background-color 0.3s ease, color 0.3s ease;
+  &:focus { outline: none; border-color: var(--border-focus); }
 `;
 
 const ClearHistoryButton = styled(Button)`
@@ -625,12 +888,13 @@ const MobileCardList = styled.div`
 `;
 
 const UserCard = styled.div`
-  background: white;
-  border: 1px solid #e2e8f0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 12px;
   padding: 0.9rem 1rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-sm);
   animation: ${fadeIn} 0.2s ease-out;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 `;
 
 const UserCardHeader = styled.div`
@@ -645,10 +909,11 @@ const UserCardMeta = styled.div`
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  background: #f8fafc;
+  background: var(--bg-tertiary);
   border-radius: 8px;
   padding: 0.55rem 0.75rem;
   margin-bottom: 0.6rem;
+  transition: background-color 0.3s ease;
 `;
 
 const UserCardMetaRow = styled.div`
@@ -659,19 +924,21 @@ const UserCardMetaRow = styled.div`
 `;
 
 const UserCardMetaLabel = styled.span`
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   flex-shrink: 0;
+  transition: color 0.3s ease;
 `;
 
 const UserCardMetaValue = styled.span`
-  color: #334155;
+  color: var(--text-secondary);
   font-size: 0.8rem;
   text-align: right;
   word-break: break-all;
+  transition: color 0.3s ease;
 `;
 
 const UserCardActions = styled.div`
@@ -786,8 +1053,10 @@ const auditTypeLabel = (type: string): string => {
 
 // ===================== ADMIN COMPONENT =====================
 const Admin = () => {
+  const { isDark, toggleTheme } = useTheme();
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState('');
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -1138,26 +1407,54 @@ const Admin = () => {
   if (!isAuthenticated) {
     return (
       <LoginFormContainer>
+        <AdminOrb $color="rgba(99,102,241,0.3)" $size={500} $top="-10%" $left="-10%" $anim={float1} />
+        <AdminOrb $color="rgba(59,130,246,0.25)" $size={400} $top="60%" $left="60%" $anim={float2} />
+        <AdminOrb $color="rgba(236,72,153,0.18)" $size={350} $top="30%" $left="70%" $anim={float3} />
         <LoginBox>
-          <Title>Admin Login</Title>
-          <PasswordInputWrapper>
-            <PasswordInput
+          <AdminThemeToggle onClick={toggleTheme} title={isDark ? 'Light mode' : 'Dark mode'}>
+            {isDark ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            )}
+          </AdminThemeToggle>
+          <AdminLoginBrand>
+            <AdminBrandName>Pulse Admin</AdminBrandName>
+            <AdminHeartbeatSvg viewBox="0 0 120 30" width="120" height="30">
+              <path d="M0 15 L30 15 L38 5 L46 25 L54 8 L60 15 L90 15 L98 5 L106 25 L114 8 L120 15" />
+            </AdminHeartbeatSvg>
+            <AdminBrandSubtitle>Admin Control Panel</AdminBrandSubtitle>
+          </AdminLoginBrand>
+          <AdminInputGroup $focused={passwordFocused}>
+            <AdminInputIcon $focused={passwordFocused}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </AdminInputIcon>
+            <AdminStyledInput
               type={isPasswordVisible ? 'text' : 'password'}
-              placeholder="Password"
+              placeholder="Enter admin password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={() => setPasswordFocused(true)}
+              onBlur={() => setPasswordFocused(false)}
+              autoFocus
             />
-            <EyeIconButton type="button" onClick={() => setIsPasswordVisible(prev => !prev)}>
+            <AdminEyeBtn type="button" onClick={() => setIsPasswordVisible(prev => !prev)}>
               {isPasswordVisible ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
               ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               )}
-            </EyeIconButton>
-          </PasswordInputWrapper>
-          <Button onClick={handleLogin} disabled={isLoading}>{isLoading ? 'Logging in...' : 'Login'}</Button>
+            </AdminEyeBtn>
+          </AdminInputGroup>
+          <AdminSubmitBtn onClick={handleLogin} disabled={isLoading} $loading={isLoading}>
+            {isLoading ? 'Authenticating...' : 'Login'}
+          </AdminSubmitBtn>
           {error && <ErrorMessage>{error}</ErrorMessage>}
+          <AdminSecuredLine>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Protected admin access
+          </AdminSecuredLine>
         </LoginBox>
       </LoginFormContainer>
     );
@@ -1172,6 +1469,13 @@ const Admin = () => {
           {lockdownStatus.isActive && (
             <Badge $color="red"><StatusDot $color="red" /> Lockdown Active</Badge>
           )}
+          <PanelThemeToggle onClick={toggleTheme} title={isDark ? 'Light mode' : 'Dark mode'}>
+            {isDark ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            )}
+          </PanelThemeToggle>
           <LogoutButton onClick={handleLogout}>Logout</LogoutButton>
         </div>
       </HeaderRow>
