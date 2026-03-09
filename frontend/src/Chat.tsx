@@ -1983,13 +1983,16 @@ const MessageItem = React.memo(({
                     <ReactionEmoji $isPlusIcon={true} onPointerDown={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      // Capture the message ID before clearing select mode
+                      // IMPORTANT: capture rect & msgId synchronously here.
+                      // React sets e.currentTarget to null after the event handler
+                      // returns, so accessing it inside requestAnimationFrame (or any
+                      // async callback) throws a TypeError and silently prevents the
+                      // picker from opening.  No rAF is needed — React 18 batches
+                      // all setState calls in the same event handler automatically.
                       const msgId = msg.id;
+                      const rect = e.currentTarget.getBoundingClientRect();
                       handleCancelSelectMode();
-                      // Use rAF to let select mode clear, then open the picker
-                      requestAnimationFrame(() => {
-                        handleOpenFullEmojiPicker(e.currentTarget.getBoundingClientRect(), msgId);
-                      });
+                      handleOpenFullEmojiPicker(rect, msgId);
                     }}>+</ReactionEmoji>
                   )}
                 </MobileReactionPicker>
@@ -3332,39 +3335,21 @@ function Chat() {
           </FilePreviewModal>
         );
       })()}
-      {emojiPickerPosition && (
-        isMobileView ? (
-          <>
-            <div
-              style={{ position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(0,0,0,0.2)' }}
-              onPointerDown={() => setEmojiPickerPosition(null)}
-            />
-            <MobileEmojiPanel ref={emojiPickerRef} style={{ zIndex: 21 }}>
-              <EmojiPicker
-                onEmojiClick={(emojiData) => { handleEmojiClick(emojiData); }}
-                autoFocusSearch={false}
-                theme={isDark ? Theme.DARK : Theme.LIGHT}
-                width="100%"
-                lazyLoadEmojis={true}
-              />
-            </MobileEmojiPanel>
-          </>
-        ) : (
-          <div
-            ref={emojiPickerRef}
-            style={(() => {
-              const pickerWidth = 350;
-              let top = emojiPickerPosition.top - 450;
-              let left = emojiPickerPosition.left;
-              if (top < 0) top = emojiPickerPosition.bottom + 10;
-              if (left + pickerWidth > window.innerWidth) left = window.innerWidth - pickerWidth - 10;
-              if (left < 0) left = 10;
-              return { position: 'absolute' as const, top: `${top}px`, left: `${left}px`, zIndex: 21 };
-            })()}
-          >
-            <EmojiPicker onEmojiClick={handleEmojiClick} autoFocusSearch={false} theme={isDark ? Theme.DARK : Theme.LIGHT} lazyLoadEmojis={true} />
-          </div>
-        )
+      {emojiPickerPosition && !isMobileView && (
+        <div
+          ref={emojiPickerRef}
+          style={(() => {
+            const pickerWidth = 350;
+            let top = emojiPickerPosition.top - 450;
+            let left = emojiPickerPosition.left;
+            if (top < 0) top = emojiPickerPosition.bottom + 10;
+            if (left + pickerWidth > window.innerWidth) left = window.innerWidth - pickerWidth - 10;
+            if (left < 0) left = 10;
+            return { position: 'absolute' as const, top: `${top}px`, left: `${left}px`, zIndex: 21 };
+          })()}
+        >
+          <EmojiPicker onEmojiClick={handleEmojiClick} autoFocusSearch={false} theme={isDark ? Theme.DARK : Theme.LIGHT} lazyLoadEmojis={true} />
+        </div>
       )}
       {fullEmojiPickerPosition && (
         <>
@@ -3678,6 +3663,22 @@ function Chat() {
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
                 <input type="file" ref={addFileInputRef} onChange={(e) => { if (e.target.files) { setStagedFiles(prev => [...prev, ...Array.from(e.target.files!)]); } if (e.target) e.target.value = ''; }} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
               </InputContainer>
+              {/* Mobile emoji picker for typing.
+                  Rendered here (inside the Footer's normal DOM flow) so the footer
+                  grows to include the picker and the messages area shrinks to fit —
+                  exactly like WhatsApp.  A fixed overlay would cover the input bar. */}
+              {isMobileView && emojiPickerPosition && (
+                <div ref={emojiPickerRef} style={{ width: '100%', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-primary)' }}>
+                  <EmojiPicker
+                    onEmojiClick={handleEmojiClick}
+                    autoFocusSearch={false}
+                    theme={isDark ? Theme.DARK : Theme.LIGHT}
+                    width="100%"
+                    height="42vh"
+                    lazyLoadEmojis={true}
+                  />
+                </div>
+              )}
             </>
               )}
             </Footer>
