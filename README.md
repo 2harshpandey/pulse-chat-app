@@ -213,12 +213,44 @@ This project progressed through multiple focused sessions. Brief highlights by s
   - Resolved all high-severity npm audit vulnerabilities: upgraded `bfj` to `9.1.3` via package.json overrides, removing the transitive `jsonpath` ReDoS vulnerability.
   - Remaining 2 moderate vulnerabilities (`webpack-dev-server`) are dev/build-tool-only with no production exposure; not fixable without migrating away from Create React App.
   - Fixed backend rate limiter to handle IPv6 users correctly and prevent bypass (now uses ipKeyGenerator, Azure proxy port stripping still supported).
-  - **Bug fixes:**
+  -Bug fixes:
     - GIF button now works reliably on mobile devices (phantom click issue fixed).
     - Clear chat action now persists across page refreshes (per-user localStorage timestamp).
     - Duplicate usernames are now prevented in the chat room (server-side and client-side checks).
     - Copy button is now hidden for videos on all devices (PC and mobile).
     - Copying an image now copies the actual image to the clipboard (not just the URL), for both PC and mobile, using the Clipboard API.
+
+- Session 15: Post-d47c6b3 Updates & Improvements
+
+  Project Goal: Real-time, secure, user-friendly chat with advanced admin controls, premium UX, and robust emoji & file handling.
+
+  Tech Stack 
+   - Frontend: React (TypeScript), styled-components, emoji-picker-react, Virtuoso.  
+   - Backend: Node.js, Express, MongoDB (Mongoose), `ws`, Cloudinary, dotenv, custom logger, express-rate-limit.  
+   - CI/CD: GitHub Actions, Azure App Service, Netlify; Dependabot for deps.  
+   - Admin: audit logs, blocking, lockdown, temp links, responsive tables.
+
+  Highlights (since d47c6b3)
+   -Custom Emoji Reactions: reliability fixes; cross-device stability.  
+   -Emoji Picker: smoother mobile/desktop pickers; overlay/tap issues resolved.  
+   -Chat UI: centered system notices, tighter spacing, quoted text color, instant scroll-to-bottom, refreshed logo/favicon.  
+   -Virtualized Scrolling: improved message loading & performance.  
+   - Auth & Theming: premium login flow; animated dark-mode toggle.  
+   - Admin Panel: fixed logs/tables, temp links, blocking, lockdown, audit trails, mobile friendly.  
+   - Security: dependency fixes, better rate limiting (IPv6/Azure), backend hardening.  
+   - UX: quoted media thumbnails, video play control, reliable copy, username grouping — responsive & accessible.  
+   - Docs & Cleanup: updated changelogs, docs, .gitignore; removed legacy files.
+
+Business Rules  
+- Emoji reactions must never break UI or message interactivity.  
+- Admin controls are secure, auditable, and reliable.  
+- Uploads/downloads preserve filenames and surface clear errors.  
+- UI must be responsive, accessible, and informative.  
+- Security fixes must maintain build stability and be documented.  
+- Sessions/identity must be stable and persistent.
+
+Impact 
+Improved reliability, security, performance, and UX across chat, emoji, admin, and login flows; modernized UI and clearer documentation.
 
 ## Contributing
 

@@ -480,3 +480,29 @@ All alerts were addressed across `frontend/src/Chat.tsx`, `frontend/src/Admin.ts
     - Copy button is now hidden for videos on all devices (PC and mobile).
     - Copying an image now copies the actual image to the clipboard (not just the URL), for both PC and mobile, using the Clipboard API.
 - Fixed backend rate limiter to handle IPv6 users correctly and prevent bypass (now uses ipKeyGenerator, Azure proxy port stripping still supported).
+
+## Session 15 — Post-d47c6b3: Summary for Project Bible
+
+**Goal:** Build a secure, realtime chat with premium UX, advanced admin tools, and robust emoji/file handling.
+
+**Stack:** React + TypeScript, Virtuoso, emoji-picker-react; Node/Express, MongoDB, `ws`, Cloudinary; GitHub Actions, Azure, Netlify, Dependabot.
+
+**Key Deliverables**
+- Reliable custom emoji reactions and improved emoji-picker UX.
+- Chat interface polish (notifications, spacing, quoted text color, scroll behavior).
+- Full virtualized message loading for performance.
+- Premium login flow and animated dark mode.
+- Admin improvements: audit logs, user blocking, lockdown, temp links, responsive tables.
+- Security hardening: dependency patches, enhanced rate limiting, backend checks.
+- UX fixes: media thumbnails, video play overlay, copy reliability, username grouping.
+- Documentation and repo cleanup.
+
+**Rules & Guarantees**
+- Reactions never break interactivity.
+- Admin features are secure and auditable.
+- Upload/download integrity and clear error feedback.
+- Responsive, accessible UI across devices.
+- Security work must preserve production builds.
+- Stable user identity/session handling.
+
+**Outcome:** Measurable gains in stability, security, performance, and usability; project aligned for production-grade operation and clearer maintenance.
