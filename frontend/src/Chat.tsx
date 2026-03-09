@@ -1782,6 +1782,7 @@ const renderMessageContent = (
           {msg.url && (
             <MediaDownloadOverlayBtn
               title="Download"
+              aria-label="Download image"
               onClick={(e) => { e.stopPropagation(); downloadFile(msg.url!, msg.originalName || 'image'); }}
             >
               <DownloadSvg />
@@ -1797,7 +1798,7 @@ const renderMessageContent = (
     return (
       <MediaContent>
         <VideoPlayer src={msg.url} onPointerDown={onMediaPointerDown} />
-        <InlineDownloadBtn onClick={() => downloadFile(msg.url!, msg.originalName || 'video')}>
+        <InlineDownloadBtn aria-label="Download video" onClick={() => downloadFile(msg.url!, msg.originalName || 'video')}>
           <DownloadSvg /> Download
         </InlineDownloadBtn>
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
