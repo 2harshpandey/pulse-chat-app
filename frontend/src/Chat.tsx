@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useContext, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
 import styled, { createGlobalStyle, keyframes } from 'styled-components';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
@@ -1665,7 +1665,6 @@ interface MessageItemProps {
   setReactionsPopup: (popup: { messageId: string; reactions: { [emoji: string]: { userId: string; username: string; }[] }; rect: DOMRect } | null) => void;
   selectedMessages: string[];
   handleOpenFullEmojiPicker: (rect: DOMRect, messageId: string) => void;
-  getReactionByUserId: (messageId: string | undefined, userId: string) => string | null;
   reactionPickerData: { messageId: string; rect: DOMRect; sender: 'me' | 'other' } | null;
   editingMessageId: string | null;
   editingText: string;
@@ -1699,7 +1698,6 @@ const MessageItem = React.memo(({
   setReactionsPopup,
   selectedMessages,
   handleOpenFullEmojiPicker,
-  getReactionByUserId,
   reactionPickerData,
   editingMessageId,
   editingText,
@@ -1761,10 +1759,11 @@ const MessageItem = React.memo(({
       }
     }
 
-    // Reset the media-tap flag when a gesture ends as a drag (not a tap),
-    // so a subsequent tap always starts clean.
+    // When a gesture ends as a drag (not a tap), clean up refs so the
+    // next tap always starts from a known-good state.
     if (last && !tap) {
       mediaWasTapped.current = false;
+      wasLongPressed.current = false;
     }
 
     // Only perform swipe-to-reply logic for horizontal swipes, not vertical scrolls.
@@ -1794,7 +1793,15 @@ const MessageItem = React.memo(({
     drag: { threshold: 10 }
   });
   
-  const currentUserReaction = getReactionByUserId(msg.id, currentUserId);
+  const currentUserReaction = useMemo(() => {
+    if (!msg.reactions) return null;
+    for (const emoji of Object.keys(msg.reactions)) {
+      if (msg.reactions[emoji].some((r: {userId: string}) => r.userId === currentUserId)) {
+        return emoji;
+      }
+    }
+    return null;
+  }, [msg.reactions, currentUserId]);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reactButtonRef = useRef<HTMLButtonElement>(null!);
   const wasLongPressed = useRef(false);
@@ -1812,11 +1819,10 @@ const MessageItem = React.memo(({
     }
   }, [msg.id]);
 
-  // Reset wasLongPressed when select mode deactivates (e.g. after reacting)
+  // Reset wasLongPressed whenever select mode changes — this covers
+  // edge cases where the ref got stuck from a prior gesture.
   useEffect(() => {
-    if (!isSelectModeActive) {
-      wasLongPressed.current = false;
-    }
+    wasLongPressed.current = false;
   }, [isSelectModeActive]);
 
   const sender = msg.userId === currentUserId ? 'me' : 'other';
@@ -1827,7 +1833,13 @@ const MessageItem = React.memo(({
   const canEdit = msg.userId === currentUserId && (now - messageTime) < 15 * 60 * 1000 && msg.text;
   const isDeleted = msg.isDeleted;
 
-  const handleLongPressStart = () => {
+  const handleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
+    // Don't start a long-press timer when the touch/click lands on the
+    // MobileReactionPicker — otherwise the 500 ms timer fires, toggles
+    // selection (deselecting the message), and unmounts the picker before
+    // the user's onClick can fire on the emoji button.
+    const target = e.target as HTMLElement;
+    if (target.closest('.mobile-reaction-picker')) return;
     longPressTimerRef.current = setTimeout(() => {
       if (isMobileView) {
         handleToggleSelectMessage(msg.id);
@@ -2641,11 +2653,15 @@ function Chat() {
   
   const normalizeMessage = (msg: any): Message => {
     if (msg.reactions) {
-      Object.keys(msg.reactions).forEach(emoji => {
-        msg.reactions[emoji] = msg.reactions[emoji].map((user: any) => 
-          typeof user === 'string' ? { userId: user, username: user } : { userId: user.userId, username: user.username || user.userId }
+      const normalizedReactions: Record<string, {userId: string; username: string}[]> = {};
+      for (const emoji of Object.keys(msg.reactions)) {
+        normalizedReactions[emoji] = msg.reactions[emoji].map((user: any) =>
+          typeof user === 'string'
+            ? { userId: user, username: user }
+            : { userId: user.userId, username: user.username || user.userId }
         );
-      });
+      }
+      return { ...msg, reactions: normalizedReactions } as Message;
     }
     return msg as Message;
   };
@@ -2802,16 +2818,18 @@ function Chat() {
     // shortly after, which will reconcile any difference.
     setMessages(prev => prev.map(m => {
       if (m.id !== messageId) return m;
-      const reactions = m.reactions ? JSON.parse(JSON.stringify(m.reactions)) : {};
+      const reactions: Record<string, {userId: string; username: string}[]> = m.reactions
+        ? JSON.parse(JSON.stringify(m.reactions))
+        : {};
       // Remove any existing reaction by this user
       let previousEmoji: string | null = null;
-      for (const e in reactions) {
-        if (Array.isArray(reactions[e])) {
-          const idx = reactions[e].findIndex((r: any) => r.userId === userId);
+      for (const [e, users] of Object.entries(reactions)) {
+        if (Array.isArray(users)) {
+          const idx = users.findIndex((r: any) => r.userId === userId);
           if (idx > -1) {
             previousEmoji = e;
-            reactions[e].splice(idx, 1);
-            if (reactions[e].length === 0) delete reactions[e];
+            users.splice(idx, 1);
+            if (users.length === 0) delete reactions[e];
             break;
           }
         }
@@ -3074,19 +3092,6 @@ function Chat() {
         return null;
       });
     }, []);
-
-    const getReactionByUserId = useCallback((messageId: string | undefined, userId: string): string | null => {
-    if (!messageId) return null;
-    const message = messages.find(m => m.id === messageId);
-    if (!message || !message.reactions) return null;
-
-    for (const emoji in message.reactions) {
-      if (message.reactions[emoji].some(r => r.userId === userId)) {
-        return emoji;
-      }
-    }
-    return null;
-  }, [messages]);
 
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     isAtBottomRef.current = atBottom;
@@ -3534,7 +3539,6 @@ function Chat() {
                               onOpenReactionPicker={handleOpenReactionPicker}
                               setReactionsPopup={setReactionsPopup}
                               handleOpenFullEmojiPicker={handleOpenFullEmojiPicker}
-                              getReactionByUserId={getReactionByUserId}
                               reactionPickerData={reactionPickerData}
                               editingMessageId={editingMessageId}
                               editingText={editingText}

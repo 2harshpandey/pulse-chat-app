@@ -1143,9 +1143,11 @@ wss.on('connection', (ws, req) => {
 
           // Build a plain-object snapshot for the WebSocket broadcast.
           // JSON.stringify on a Map instance gives '{}' — we must convert explicitly.
+          // We also map each subdocument to a plain { userId, username } object
+          // to avoid leaking Mongoose internals to the frontend.
           const reactionsPlain = {};
           for (const [k, v] of messageDoc.reactions.entries()) {
-            reactionsPlain[k] = Array.from(v);
+            reactionsPlain[k] = v.map(u => ({ userId: u.userId, username: u.username }));
           }
 
           wss.clients.forEach(client => {
