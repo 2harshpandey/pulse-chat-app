@@ -1713,10 +1713,18 @@ const MessageItem = React.memo(({
   // When true the gesture-tap handler skips selection so the lightbox/player
   // can open without also selecting the message.
   const mediaWasTapped = useRef(false);
+  // Tracks whether the pointer-down landed on the MobileReactionPicker.
+  // The picker can unmount before the tap ends (e.g., clicking + to open
+  // full emoji panel calls handleCancelSelectMode), so checking target.closest
+  // at tap-time fails. We capture this on pointerdown instead.
+  const reactionPickerTapped = useRef(false);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
       editInputRef.current.focus();
+      // Move cursor to end of text
+      const len = editInputRef.current.value.length;
+      editInputRef.current.setSelectionRange(len, len);
       editInputRef.current.style.height = 'auto';
       editInputRef.current.style.height = `${editInputRef.current.scrollHeight}px`;
     }
@@ -1732,7 +1740,12 @@ const MessageItem = React.memo(({
     if (tap) {
       const target = event.target as HTMLElement;
       // If the tap was on the reaction picker, ignore it completely.
-      if (target.closest('.mobile-reaction-picker')) {
+      // We check both the current DOM (target.closest) and the ref that was
+      // set on pointerdown (reactionPickerTapped). The latter handles the case
+      // where the picker unmounts before the tap ends (e.g., clicking + opens
+      // the full emoji panel and calls handleCancelSelectMode).
+      if (target.closest('.mobile-reaction-picker') || reactionPickerTapped.current) {
+        reactionPickerTapped.current = false;
         return;
       }
       
@@ -1764,6 +1777,7 @@ const MessageItem = React.memo(({
     if (last && !tap) {
       mediaWasTapped.current = false;
       wasLongPressed.current = false;
+      reactionPickerTapped.current = false;
     }
 
     // Only perform swipe-to-reply logic for horizontal swipes, not vertical scrolls.
@@ -1812,6 +1826,8 @@ const MessageItem = React.memo(({
     if (prevMsgIdRef.current !== msg.id) {
       prevMsgIdRef.current = msg.id;
       wasLongPressed.current = false;
+      reactionPickerTapped.current = false;
+      mediaWasTapped.current = false;
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
@@ -1996,6 +2012,7 @@ const MessageItem = React.memo(({
                 <MobileReactionPicker 
                   $sender={sender}
                   className="mobile-reaction-picker"
+                  onPointerDown={() => { reactionPickerTapped.current = true; }}
                 >
                   {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
                     <ReactionEmoji key={emoji} onClick={(e) => {
@@ -2659,12 +2676,18 @@ function Chat() {
   const normalizeMessage = (msg: any): Message => {
     if (msg.reactions) {
       const normalizedReactions: Record<string, {userId: string; username: string}[]> = {};
-      for (const emoji of Object.keys(msg.reactions)) {
-        normalizedReactions[emoji] = msg.reactions[emoji].map((user: any) =>
-          typeof user === 'string'
-            ? { userId: user, username: user }
-            : { userId: user.userId, username: user.username || user.userId }
-        );
+      // Handle both plain objects and Map instances (Mongoose .lean() may return Maps)
+      const entries: [string, any][] = msg.reactions instanceof Map
+        ? Array.from(msg.reactions.entries())
+        : Object.entries(msg.reactions);
+      for (const [emoji, users] of entries) {
+        if (Array.isArray(users)) {
+          normalizedReactions[emoji] = users.map((user: any) =>
+            typeof user === 'string'
+              ? { userId: user, username: user }
+              : { userId: user.userId, username: user.username || user.userId }
+          );
+        }
       }
       return { ...msg, reactions: normalizedReactions } as Message;
     }

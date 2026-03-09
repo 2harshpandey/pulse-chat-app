@@ -1084,7 +1084,22 @@ wss.on('connection', (ws, req) => {
 
         Message.find().sort({ createdAt: 1 }).lean()
           .then(messages => {
-            ws.send(JSON.stringify({ type: 'history', data: messages }));
+            // Convert Mongoose Map fields to plain objects for JSON serialization.
+            // .lean() may return Map instances for schema fields defined as `type: Map`,
+            // which JSON.stringify converts to '{}'. We must explicitly convert them.
+            const cleanMessages = messages.map(msg => {
+              if (msg.reactions instanceof Map) {
+                const reactionsPlain = {};
+                for (const [k, v] of msg.reactions.entries()) {
+                  reactionsPlain[k] = Array.isArray(v)
+                    ? v.map(u => ({ userId: u.userId, username: u.username }))
+                    : v;
+                }
+                return { ...msg, reactions: reactionsPlain };
+              }
+              return msg;
+            });
+            ws.send(JSON.stringify({ type: 'history', data: cleanMessages }));
           })
           .catch(err => logger.error('Failed to send initial history:', err));
         break;
