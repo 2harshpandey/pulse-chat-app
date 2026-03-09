@@ -241,16 +241,15 @@ This project progressed through multiple focused sessions. Brief highlights by s
    - UX: quoted media thumbnails, video play control, reliable copy, username grouping — responsive & accessible.  
    - Docs & Cleanup: updated changelogs, docs, .gitignore; removed legacy files.
 
-Business Rules  
-- Emoji reactions must never break UI or message interactivity.  
-- Admin controls are secure, auditable, and reliable.  
-- Uploads/downloads preserve filenames and surface clear errors.  
-- UI must be responsive, accessible, and informative.  
-- Security fixes must maintain build stability and be documented.  
-- Sessions/identity must be stable and persistent.
+  Business Rules  
+   - Emoji reactions must never break UI or message interactivity.  
+   - Admin controls are secure, auditable, and reliable.  
+   - Uploads/downloads preserve filenames and surface clear errors.  
+   - UI must be responsive, accessible, and informative.  
+   - Security fixes must maintain build stability and be documented.  
+   - Sessions/identity must be stable and persistent.
 
-Impact 
-Improved reliability, security, performance, and UX across chat, emoji, admin, and login flows; modernized UI and clearer documentation.
+  Impact: Improved reliability, security, performance, and UX across chat, emoji, admin, and login flows; modernized UI and clearer documentation.
 
 ## Contributing
 
