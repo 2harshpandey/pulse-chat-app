@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import styled, { createGlobalStyle, keyframes } from 'styled-components';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
@@ -872,8 +873,9 @@ const Lightbox = styled.div`
   img { max-width: 90%; max-height: 90%; border-radius: 8px; }
 `;
 const DeleteMenu = styled.div`
-  position: absolute; top: 28px; right: 0; background: var(--bg-elevated); border-radius: 8px; box-shadow: var(--shadow-md); z-index: 35; overflow: hidden; border: 1px solid var(--border-primary); pointer-events: all; transition: background-color 0.3s ease;
+  background: var(--bg-elevated); border-radius: 8px; box-shadow: var(--shadow-md); overflow: hidden; border: 1px solid var(--border-primary); pointer-events: all; transition: background-color 0.3s ease;
   animation: ${fadeInScale} 0.2s ease-out forwards;
+  min-width: 160px;
 `;
 const DeleteMenuItem = styled.button`
   display: flex;
@@ -1629,10 +1631,44 @@ const MediaDisplay = ({ msg, openLightbox }: { msg: Message, openLightbox: (url:
     return null;
 };
 
+const renderTextWithLinks = (text: string, sender: 'me' | 'other'): React.ReactNode => {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  if (parts.length === 1) return text;
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (/^https?:\/\//.test(part)) {
+          const url = part.replace(/[.,;:!?)'"\]>]+$/, '');
+          const trailing = part.slice(url.length);
+          return (
+            <React.Fragment key={i}>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  color: sender === 'me' ? 'rgba(255,255,255,0.95)' : 'var(--accent-indigo)',
+                  textDecoration: 'underline',
+                  wordBreak: 'break-all',
+                }}
+              >{url}</a>
+              {trailing}
+            </React.Fragment>
+          );
+        }
+        return part;
+      })}
+    </>
+  );
+};
+
 const renderMessageContent = (
   msg: Message,
   openLightbox: (url: string) => void,
   onMediaPointerDown?: () => void,
+  sender: 'me' | 'other' = 'other',
 ) => {
   const isVideo = msg.type === 'video' || msg.url?.match(/\.(mp4|webm|mov)$/i);
   const isImage = msg.type === 'image' || msg.url?.match(/\.(jpeg|jpg|gif|png|svg)$/i);
@@ -1659,7 +1695,7 @@ const renderMessageContent = (
             </MediaDownloadOverlayBtn>
           )}
         </MediaImageWrapper>
-        {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{msg.text}</MessageText>}
+        {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
       </MediaContent>
     );
   }
@@ -1671,7 +1707,7 @@ const renderMessageContent = (
         <InlineDownloadBtn onClick={() => downloadFile(msg.url!, msg.originalName || 'video')}>
           <DownloadSvg /> Download
         </InlineDownloadBtn>
-        {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{msg.text}</MessageText>}
+        {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
       </MediaContent>
     );
   }
@@ -1691,13 +1727,13 @@ const renderMessageContent = (
             <line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </FileAttachmentCard>
-        {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{msg.text}</MessageText>}
+        {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
       </MediaContent>
     );
   }
 
   if (msg.text) {
-    return <MessageText>{msg.text}</MessageText>;
+    return <MessageText>{renderTextWithLinks(msg.text, sender)}</MessageText>;
   }
 
   return null;
@@ -1837,6 +1873,20 @@ const MessageItem = React.memo(({
   const editInputRef = useRef<HTMLTextAreaElement>(null!);
   const messageRowRef = useRef<HTMLDivElement>(null!);
   const messageBubbleRef = useRef<HTMLDivElement>(null!);
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+
+  // Keep menuPos in sync: clear it whenever this row's menu is closed from outside.
+  useEffect(() => {
+    if (activeDeleteMenu !== msg.id) setMenuPos(null);
+  }, [activeDeleteMenu, msg.id]);
+
+  // Close menu on any scroll (e.g. user scrolls while menu is open).
+  useEffect(() => {
+    if (activeDeleteMenu !== msg.id || !menuPos) return;
+    const close = () => { setActiveDeleteMenu(null); };
+    document.addEventListener('scroll', close, true);
+    return () => document.removeEventListener('scroll', close, true);
+  }, [activeDeleteMenu, msg.id, menuPos, setActiveDeleteMenu]);
   // Tracks whether the pointer-down landed on a media preview element.
   // When true the gesture-tap handler skips selection so the lightbox/player
   // can open without also selecting the message.
@@ -2005,6 +2055,7 @@ const MessageItem = React.memo(({
   };
 
   return (
+    <React.Fragment>
     <MessageRow
       id={`message-${msg.id}`}
       ref={messageRowRef}
@@ -2168,33 +2219,24 @@ const MessageItem = React.memo(({
                   <ActionButton ref={reactButtonRef} className="react-action-button" onClick={() => onOpenReactionPicker(msg.id, reactButtonRef.current!.getBoundingClientRect(), sender)} title="React">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
                   </ActionButton>
-                  <ActionButton onClick={() => openDeleteMenu(msg.id)} title="More" className="more-action-button" style={{ fontSize: '20px' }}>&#8942;</ActionButton>
+                  <ActionButton
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const isNearBottom = rect.bottom + 190 > window.innerHeight;
+                      setMenuPos(isNearBottom
+                        ? { bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right }
+                        : { top: rect.bottom + 4, right: window.innerWidth - rect.right }
+                      );
+                      openDeleteMenu(msg.id);
+                    }}
+                    title="More"
+                    className="more-action-button"
+                    style={{ fontSize: '20px' }}
+                  >&#8942;</ActionButton>
                 </MessageActions>
               )}
-              {activeDeleteMenu === msg.id && (
-                <DeleteMenu ref={deleteMenuRef}>
-                  {canEdit && (
-                    <DeleteMenuItem onClick={() => handleStartEdit(msg)}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                      Edit
-                    </DeleteMenuItem>
-                  )}
-                  {!msg.isDeleted && msg.type !== 'video' && msg.type !== 'file' && (msg.text || msg.url) && 
-                    <DeleteMenuItem onClick={() => { handleCopy(msg); setActiveDeleteMenu(null); }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                      Copy
-                    </DeleteMenuItem>
-                  }
-                  <DeleteMenuItem onClick={() => {
-                    handleToggleSelectMessage(msg.id);
-                    setActiveDeleteMenu(null);
-                  }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                    Delete
-                  </DeleteMenuItem>
-                </DeleteMenu>
-              )}
-              {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined)}
+              {/* DeleteMenu rendered as fixed portal — see block after </MessageRow> */}
+              {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined, sender)}
               {msg.type === 'text' && !msg.url && msg.text && (() => { const _u = detectFirstUrl(msg.text); return _u ? <LinkPreview url={_u} sender={sender} /> : null; })()}
               <FooterContainer $sender={sender}>
                 <Timestamp $sender={sender}>{msg.edited && <span>(edited) </span>}{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
@@ -2214,6 +2256,38 @@ const MessageItem = React.memo(({
         </MessageBubble>
       </div>
     </MessageRow>
+    {activeDeleteMenu === msg.id && menuPos && createPortal(
+      <div
+        ref={deleteMenuRef}
+        style={{
+          position: 'fixed',
+          ...(menuPos.top !== undefined ? { top: menuPos.top } : { bottom: menuPos.bottom }),
+          right: menuPos.right,
+          zIndex: 9999,
+        }}
+      >
+        <DeleteMenu>
+          {canEdit && (
+            <DeleteMenuItem onClick={() => handleStartEdit(msg)}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              Edit
+            </DeleteMenuItem>
+          )}
+          {!msg.isDeleted && msg.type !== 'video' && msg.type !== 'file' && (msg.text || msg.url) &&
+            <DeleteMenuItem onClick={() => { handleCopy(msg); setActiveDeleteMenu(null); }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy
+            </DeleteMenuItem>
+          }
+          <DeleteMenuItem onClick={() => { handleToggleSelectMessage(msg.id); setActiveDeleteMenu(null); }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+            Delete
+          </DeleteMenuItem>
+        </DeleteMenu>
+      </div>,
+      document.body
+    )}
+    </React.Fragment>
   );
 });
 
