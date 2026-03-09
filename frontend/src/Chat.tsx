@@ -468,7 +468,7 @@ const ActionButtonsContainer = styled.div`
     flex-direction: column;
   }
 `;
-const MessageInput = styled.textarea`
+const MessageInput = styled.textarea<{ $hasUrl?: boolean }>`
   width: 100%;
   padding: 0.75rem;
   border: 1px solid var(--border-secondary);
@@ -483,18 +483,46 @@ const MessageInput = styled.textarea`
   touch-action: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
-  background: var(--bg-input);
-  color: var(--text-primary);
+  background: ${p => p.$hasUrl ? 'transparent' : 'var(--bg-input)'};
+  color: ${p => p.$hasUrl ? 'transparent' : 'var(--text-primary)'};
+  caret-color: var(--text-primary);
+  position: relative;
+  z-index: 1;
   &:focus { 
     outline: none; 
     border-color: #3B82F6; 
     box-shadow: 0 0 0 2px #bfdbfe; 
   }
-  &::placeholder { color: var(--text-muted); }
+  &::placeholder { color: ${p => p.$hasUrl ? 'transparent' : 'var(--text-muted)'}; }
   &::-webkit-scrollbar { width: 8px; }
   &::-webkit-scrollbar-track { background: transparent; }
   &::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
   &::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+`;
+const InputTextWrapper = styled.div`
+  position: relative;
+  flex: 1;
+  min-width: 0;
+`;
+const InputHighlightOverlay = styled.div`
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  padding: 0.75rem;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-word;
+  color: var(--text-primary);
+  border-radius: calc(0.75rem - 1px);
+  background: var(--bg-input);
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
 `;
 const CharacterCounter = styled.span<{ $warning: boolean }>`
   position: absolute;
@@ -1627,42 +1655,104 @@ const MediaDisplay = ({ msg, openLightbox }: { msg: Message, openLightbox: (url:
     if (isVideo && msg.url) {
         return <VideoPlayer src={msg.url} />;
     }
-
     return null;
 };
 
-const renderTextWithLinks = (text: string, sender: 'me' | 'other'): React.ReactNode => {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
-  if (parts.length === 1) return text;
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (/^https?:\/\//.test(part)) {
-          const url = part.replace(/[.,;:!?)'"\]>]+$/, '');
-          const trailing = part.slice(url.length);
-          return (
-            <React.Fragment key={i}>
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  color: sender === 'me' ? 'rgba(255,255,255,0.95)' : 'var(--accent-indigo)',
-                  textDecoration: 'underline',
-                  wordBreak: 'break-all',
-                }}
-              >{url}</a>
-              {trailing}
-            </React.Fragment>
-          );
-        }
-        return part;
-      })}
-    </>
-  );
+// --- URL Detection helpers ---
+// Curated list of known valid TLDs — filters gibberish like .gfdgf or .gtd
+const VALID_TLDS = new Set([
+  // Generic
+  'com','org','net','edu','gov','mil','int','info','biz','name','pro',
+  // Popular new gTLDs
+  'io','co','ai','app','dev','web','tech','online','site','store','shop',
+  'blog','cloud','digital','media','social','email','live','video','tv',
+  'news','agency','studio','design','space','team','group','global',
+  'world','today','network','finance','health','care','academy',
+  // Country codes
+  'ac','ad','ae','af','ag','al','am','ao','ar','as','at','au','aw','az',
+  'ba','bb','bd','be','bg','bh','bi','bj','bm','bn','bo','br','bs','bt',
+  'bw','by','bz','ca','cc','cd','cf','cg','ch','ci','ck','cl','cm','cn',
+  'cr','cu','cv','cy','cz','de','dj','dk','dm','do','dz','ec','ee','eg',
+  'er','es','et','eu','fi','fj','fo','fr','ga','gb','gd','ge','gg','gh',
+  'gi','gl','gm','gn','gp','gq','gr','gt','gu','gy','hk','hn','hr','ht',
+  'hu','id','ie','il','im','in','iq','ir','is','it','je','jm','jo','jp',
+  'ke','kg','kh','km','kn','kr','kw','ky','kz','la','lb','lc','li','lk',
+  'lr','ls','lt','lu','lv','ly','ma','mc','md','me','mg','mk','ml','mm',
+  'mn','mo','mp','mq','mr','ms','mt','mu','mv','mw','mx','my','mz','na',
+  'nc','ne','nf','ng','ni','nl','no','np','nr','nu','nz','om','pa','pe',
+  'pf','pg','ph','pk','pl','pm','pn','pr','ps','pt','pw','py','qa','re',
+  'ro','rs','ru','rw','sa','sb','sc','sd','se','sg','sh','si','sk','sl',
+  'sm','sn','so','sr','st','su','sv','sy','sz','tc','td','tf','tg','th',
+  'tj','tk','tl','tm','tn','to','tr','tt','tv','tw','tz','ua','ug','uk',
+  'um','us','uy','uz','va','vc','ve','vg','vi','vn','vu','wf','ws','ye',
+  'yt','za','zm','zw',
+]);
+
+// Candidate regex: matches http(s)://..., www.anything, or word.word patterns.
+// Uses a capturing group so text.split() keeps the matches in the result array.
+// TLD validation inside normalizeUrl filters false positives (gibberish domains).
+const CANDIDATE_URL_RE = /((?:https?:\/\/|ftp:\/\/)[^\s]+|www\.[a-zA-Z0-9][a-zA-Z0-9\-.]*[a-zA-Z0-9]\.[a-zA-Z]{2,}(?:[^\s]*)?|(?<![/@#])[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+
+const normalizeUrl = (raw: string): { href: string; display: string } | null => {
+  // Strip trailing punctuation
+  const display = raw.replace(/[.,;:!?)'">\]]+$/, '');
+  if (!display) return null;
+  // Already has a protocol — always a link
+  if (/^https?:\/\//i.test(display)) return { href: display, display };
+  if (/^ftp:\/\//i.test(display)) return { href: display, display };
+  // Starts with www. — always a link
+  if (/^www\./i.test(display)) return { href: `https://${display}`, display };
+  // Bare domain — validate TLD against known list
+  const hostname = display.split(/[/?#]/)[0];
+  const labels = hostname.split('.');
+  if (labels.length < 2) return null;
+  const tld = labels[labels.length - 1].toLowerCase();
+  if (!VALID_TLDS.has(tld)) return null;
+  const validLabel = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$|^[a-zA-Z0-9]$/;
+  if (!labels.every(l => validLabel.test(l))) return null;
+  return { href: `https://${display}`, display };
 };
+
+const renderTextWithLinks = (text: string, sender: 'me' | 'other'): React.ReactNode => {
+  const parts = text.split(CANDIDATE_URL_RE);
+  if (parts.length === 1) return text;
+  const result: React.ReactNode[] = [];
+  parts.forEach((part, i) => {
+    if (i % 2 === 0) { if (part) result.push(part); return; }
+    const norm = normalizeUrl(part);
+    if (!norm) { result.push(part); return; }
+    const trailing = part.slice(norm.display.length);
+    result.push(
+      <React.Fragment key={i}>
+        <a
+          href={norm.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            color: sender === 'me' ? '#bfdbfe' : 'var(--accent-indigo)',
+            textDecoration: 'underline',
+            wordBreak: 'break-all',
+          }}
+        >{norm.display}</a>
+        {trailing}
+      </React.Fragment>
+    );
+  });
+  return result.length === 1 ? result[0] : <>{result}</>;
+};
+
+// Returns the href for the first detected URL (used by LinkPreview card)
+const detectFirstUrl = (text: string): string | null => {
+  CANDIDATE_URL_RE.lastIndex = 0;
+  const match = CANDIDATE_URL_RE.exec(text);
+  CANDIDATE_URL_RE.lastIndex = 0;
+  if (!match) return null;
+  const norm = normalizeUrl(match[0]);
+  return norm ? norm.href : null;
+};
+
+
 
 const renderMessageContent = (
   msg: Message,
@@ -1748,12 +1838,6 @@ interface LinkPreviewData {
 }
 
 const linkPreviewCache = new Map<string, LinkPreviewData | null>();
-
-const detectFirstUrl = (text: string): string | null => {
-  const match = text.match(/https?:\/\/[^\s]+/);
-  if (!match) return null;
-  return match[0].replace(/[.,;:!?)'"]+$/, '');
-};
 
 const LinkPreview: React.FC<{ url: string; sender: 'me' | 'other' }> = React.memo(({ url, sender }) => {
   const [data, setData] = useState<LinkPreviewData | null | undefined>(
@@ -3904,16 +3988,34 @@ function Chat() {
                     </AttachmentMenuContainer>
                   </div>
                 </ActionButtonsContainer>
-                <MessageInput
-                  ref={messageInputRef}
-                  rows={1}
-                  placeholder={stagedFile || stagedGif ? 'Add a caption...' : 'Type your message...'}
-                  value={inputMessage}
-                  onChange={handleInputChange}
-                  onKeyDown={handleInputKeyDown}
-                  onPaste={handlePaste}
-                  maxLength={MAX_MESSAGE_LENGTH}
-                />
+                <InputTextWrapper>
+                  {(() => {
+                    // Detect URL in current input — if found, render highlight overlay
+                    CANDIDATE_URL_RE.lastIndex = 0;
+                    const hasUrl = CANDIDATE_URL_RE.test(inputMessage);
+                    CANDIDATE_URL_RE.lastIndex = 0;
+                    return (
+                      <>
+                        {hasUrl && (
+                          <InputHighlightOverlay aria-hidden="true">
+                            {renderTextWithLinks(inputMessage, 'other')}
+                          </InputHighlightOverlay>
+                        )}
+                        <MessageInput
+                          $hasUrl={hasUrl}
+                          ref={messageInputRef}
+                          rows={1}
+                          placeholder={stagedFile || stagedGif ? 'Add a caption...' : 'Type your message...'}
+                          value={inputMessage}
+                          onChange={handleInputChange}
+                          onKeyDown={handleInputKeyDown}
+                          onPaste={handlePaste}
+                          maxLength={MAX_MESSAGE_LENGTH}
+                        />
+                      </>
+                    );
+                  })()}
+                </InputTextWrapper>
                 {inputMessage.length >= MAX_MESSAGE_LENGTH - 200 && (
                   <CharacterCounter $warning={inputMessage.length >= MAX_MESSAGE_LENGTH - 20}>
                     {MAX_MESSAGE_LENGTH - inputMessage.length}
