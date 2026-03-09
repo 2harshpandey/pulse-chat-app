@@ -563,6 +563,11 @@ const LogoutButton = styled(Button)`
   &:hover { background-color: #DC2626; }
 `;
 
+const DangerButton = styled(Button)`
+  background-color: #EF4444;
+  &:hover { background-color: #DC2626; }
+`;
+
 const SuccessButton = styled(Button)`
   background-color: #10B981;
   &:hover { background-color: #059669; }
@@ -1269,6 +1274,15 @@ const Admin = () => {
     } catch (err) { console.error('Failed to force logout', err); }
   };
 
+  const handleForceLogoutAll = async () => {
+    if (!window.confirm(`Force logout ALL ${onlineUsersList.length} online user(s)? This cannot be undone.`)) return;
+    try {
+      await fetch(`${apiUrl}/api/admin/force-logout-all`, { method: 'POST', headers: apiHeaders() });
+      setOnlineUsersList([]);
+      setLoggedInUsersList([]);
+    } catch (err) { console.error('Failed to force logout all', err); }
+  };
+
   const handleBlockUser = async (userId: string, username: string) => {
     const reason = prompt(`Block user "${username}"? Enter a reason (optional):`);
     if (reason === null) return;
@@ -1514,6 +1528,13 @@ const Admin = () => {
         {/* ===== USERS ===== */}
         {activeTab === 'users' && (
           <ScrollContainer>
+            {onlineUsersList.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+                <DangerButton onClick={handleForceLogoutAll} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  ⚡ Force Logout All ({onlineUsersList.length})
+                </DangerButton>
+              </div>
+            )}
             <SectionTitle>
               <StatusDot $color="green" /> Online Users ({onlineUsersList.length})
             </SectionTitle>

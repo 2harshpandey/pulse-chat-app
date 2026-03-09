@@ -701,6 +701,31 @@ app.post('/api/admin/force-logout/:userId', adminLimiter, adminAuth, async (req,
     res.json({ success: true, message: `User '${username}' has been logged out.` });
 });
 
+// --- Force Logout All Route ---
+app.post('/api/admin/force-logout-all', adminLimiter, adminAuth, async (req, res) => {
+    const affectedUsers = [];
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN && !client.isAdmin) {
+            const uid = client.userId;
+            const uname = (loggedInUsers.get(uid) || onlineUsers.get(uid))?.username || 'Unknown';
+            affectedUsers.push({ userId: uid, username: uname });
+            client.send(JSON.stringify({ type: 'force_logout', message: 'You have been logged out by an administrator.' }));
+            setTimeout(() => client.terminate(), 500);
+        }
+    });
+    // Clear all tracking
+    onlineUsers.clear();
+    loggedInUsers.clear();
+    typingUsers.clear();
+    pendingDisconnects.forEach(t => clearTimeout(t));
+    pendingDisconnects.clear();
+
+    await AuditLog.create({ type: 'force_logged_out_all', details: { count: affectedUsers.length, users: affectedUsers } });
+    broadcastToAdmins('activity', `Admin force-logged out ALL ${affectedUsers.length} user(s).`);
+    broadcastOnlineUsers();
+    res.json({ success: true, message: `Force-logged out ${affectedUsers.length} user(s).` });
+});
+
 // --- Block/Unblock User Routes ---
 app.post('/api/admin/block-user', adminLimiter, adminAuth, async (req, res) => {
     const { userId, username, reason } = req.body;
