@@ -2552,9 +2552,34 @@ const MessageItem = React.memo(({
             </QuotedMessageContainer>
           )}
           {isDeleted ? (
-            <MessageText style={{ fontStyle: 'italic', color: sender === 'me' ? '#bfdbfe' : '#a0aec0', userSelect: 'none', WebkitUserSelect: 'none', cursor: 'default' }}>
-              {msg.deletedBy === currentUserId ? 'You deleted this message.' : 'This message has been deleted.'}
-            </MessageText>
+            <>
+              <MessageText style={{ fontStyle: 'italic', color: sender === 'me' ? '#bfdbfe' : '#a0aec0', userSelect: 'none', WebkitUserSelect: 'none', cursor: 'default' }}>
+                {msg.deletedBy === currentUserId ? 'You deleted this message.' : 'This message has been deleted.'}
+              </MessageText>
+              {!isMobileView && (
+                <MessageActions>
+                  <ActionButton
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const isNearBottom = rect.bottom + 100 > window.innerHeight;
+                      const menuWidth = 168;
+                      const wouldClipLeft = rect.right - menuWidth < 8;
+                      const hPos = wouldClipLeft
+                        ? { left: Math.max(8, rect.left) }
+                        : { right: window.innerWidth - rect.right };
+                      setMenuPos(isNearBottom
+                        ? { bottom: window.innerHeight - rect.top + 4, ...hPos }
+                        : { top: rect.bottom + 4, ...hPos }
+                      );
+                      openDeleteMenu(msg.id);
+                    }}
+                    title="More"
+                    className="more-action-button"
+                    style={{ fontSize: '20px' }}
+                  >&#8942;</ActionButton>
+                </MessageActions>
+              )}
+            </>
           ) : isEditing ? (
             msg.url ? (
               <MediaContent>
@@ -2693,22 +2718,31 @@ const MessageItem = React.memo(({
         }}
       >
         <DeleteMenu>
-          {canEdit && (
-            <DeleteMenuItem onClick={() => handleStartEdit(msg)}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-              Edit
+          {msg.isDeleted ? (
+            <DeleteMenuItem onClick={() => { deleteForMe(msg.id); setActiveDeleteMenu(null); }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              Delete for me
             </DeleteMenuItem>
+          ) : (
+            <>
+              {canEdit && (
+                <DeleteMenuItem onClick={() => handleStartEdit(msg)}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                  Edit
+                </DeleteMenuItem>
+              )}
+              {msg.type !== 'video' && msg.type !== 'file' && (msg.text || msg.url) &&
+                <DeleteMenuItem onClick={() => { handleCopy(msg); setActiveDeleteMenu(null); }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  Copy
+                </DeleteMenuItem>
+              }
+              <DeleteMenuItem onClick={() => { handleToggleSelectMessage(msg.id); setActiveDeleteMenu(null); }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                Delete
+              </DeleteMenuItem>
+            </>
           )}
-          {!msg.isDeleted && msg.type !== 'video' && msg.type !== 'file' && (msg.text || msg.url) &&
-            <DeleteMenuItem onClick={() => { handleCopy(msg); setActiveDeleteMenu(null); }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              Copy
-            </DeleteMenuItem>
-          }
-          <DeleteMenuItem onClick={() => { handleToggleSelectMessage(msg.id); setActiveDeleteMenu(null); }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-            Delete
-          </DeleteMenuItem>
         </DeleteMenu>
       </div>,
       document.body
@@ -3522,8 +3556,7 @@ function Chat() {
   }, [userContext?.profile]);
 
   const deleteForMe = useCallback((messageId: string) => {
-    if (!ws.current) return;
-    ws.current.send(JSON.stringify({ type: 'delete_for_me', messageId }));
+    setMessages(prev => prev.filter(m => m.id !== messageId));
   }, []);
 
   const deleteForEveryone = useCallback((messageId: string) => {
