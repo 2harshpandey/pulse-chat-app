@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import styled, { createGlobalStyle, keyframes } from 'styled-components';
+import styled, { createGlobalStyle, keyframes, css } from 'styled-components';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useDrag } from '@use-gesture/react';
@@ -1858,7 +1858,7 @@ const Checkbox = styled.div<{ checked: boolean }>`
     font-size: 14px;
     font-weight: bold;
     display: ${props => props.checked ? 'block' : 'none'};
-    animation: ${props => props.checked ? `${staggerFadeIn} 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both` : 'none'};
+    ${props => props.checked && css`animation: ${staggerFadeIn} 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) both;`}
   }
 `;
 
@@ -2295,7 +2295,7 @@ const MessageItem = React.memo(({
   const editInputRef = useRef<HTMLTextAreaElement>(null!);
   const messageRowRef = useRef<HTMLDivElement>(null!);
   const messageBubbleRef = useRef<HTMLDivElement>(null!);
-  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right?: number; left?: number } | null>(null);
 
   // Keep menuPos in sync: clear it whenever this row's menu is closed from outside.
   useEffect(() => {
@@ -2642,9 +2642,16 @@ const MessageItem = React.memo(({
                     onClick={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect();
                       const isNearBottom = rect.bottom + 190 > window.innerHeight;
+                      // Approximate menu width. If anchoring from the right would push
+                      // the menu off the left edge of the screen, anchor from left instead.
+                      const menuWidth = 168;
+                      const wouldClipLeft = rect.right - menuWidth < 8;
+                      const hPos = wouldClipLeft
+                        ? { left: Math.max(8, rect.left) }
+                        : { right: window.innerWidth - rect.right };
                       setMenuPos(isNearBottom
-                        ? { bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right }
-                        : { top: rect.bottom + 4, right: window.innerWidth - rect.right }
+                        ? { bottom: window.innerHeight - rect.top + 4, ...hPos }
+                        : { top: rect.bottom + 4, ...hPos }
                       );
                       openDeleteMenu(msg.id);
                     }}
@@ -2681,7 +2688,7 @@ const MessageItem = React.memo(({
         style={{
           position: 'fixed',
           ...(menuPos.top !== undefined ? { top: menuPos.top } : { bottom: menuPos.bottom }),
-          right: menuPos.right,
+          ...(menuPos.left !== undefined ? { left: menuPos.left } : { right: menuPos.right }),
           zIndex: 9999,
         }}
       >
