@@ -144,9 +144,43 @@ const fadeInScale = keyframes`
   to { opacity: 1; transform: scale(1); }
 `;
 
-const popIn = keyframes`
-  0% { transform: scale(0.5); opacity: 0; }
-  80% { transform: scale(1.1); opacity: 1; }
+/* ═══ Premium Reaction Animations ═══ */
+const reactionBounceIn = keyframes`
+  0%   { transform: scale(0); opacity: 0; }
+  50%  { transform: scale(1.3); opacity: 1; }
+  70%  { transform: scale(0.9); }
+  85%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+`;
+
+const reactionPillPop = keyframes`
+  0%   { transform: scale(0.3) translateY(8px); opacity: 0; }
+  60%  { transform: scale(1.08) translateY(-2px); opacity: 1; }
+  80%  { transform: scale(0.97) translateY(1px); }
+  100% { transform: scale(1) translateY(0); }
+`;
+
+const staggerFadeIn = keyframes`
+  from { opacity: 0; transform: translateY(6px) scale(0.8); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+`;
+
+const emojiPopTap = keyframes`
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.75); }
+  70%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+`;
+
+const reactionPickerSlideIn = keyframes`
+  0%   { opacity: 0; transform: scale(0.8) translateY(10px); }
+  60%  { opacity: 1; transform: scale(1.03) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+`;
+
+const countBump = keyframes`
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.35); color: var(--accent-blue); }
   100% { transform: scale(1); }
 `;
 
@@ -365,21 +399,41 @@ const Username = styled.div<{ $sender: 'me' | 'other' }>`
 `;
 const MobileReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
   position: absolute;
-  top: -40px;
+  top: -44px;
   z-index: 30;
   background: var(--bg-elevated);
-  border-radius: 20px;
-  padding: 4px 8px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 24px;
+  padding: 5px 10px;
   display: flex;
-  gap: 4px;
-  box-shadow: var(--shadow-md);
+  gap: 2px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
   border: 1px solid var(--border-primary);
-  animation: ${fadeInScale} 0.2s ease-out forwards;
+  animation: ${reactionPickerSlideIn} 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+
+  [data-theme='dark'] & {
+    background: rgba(30, 41, 59, 0.92);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
+  }
 
   ${props => props.$sender === 'me' 
     ? `right: 10px;` 
     : `left: 10px;`
   }
+
+  /* Stagger each emoji child */
+  & > button {
+    animation: ${staggerFadeIn} 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  & > button:nth-child(1) { animation-delay: 0.03s; }
+  & > button:nth-child(2) { animation-delay: 0.06s; }
+  & > button:nth-child(3) { animation-delay: 0.09s; }
+  & > button:nth-child(4) { animation-delay: 0.12s; }
+  & > button:nth-child(5) { animation-delay: 0.15s; }
+  & > button:nth-child(6) { animation-delay: 0.18s; }
+  & > button:nth-child(7) { animation-delay: 0.21s; }
+  & > button:nth-child(8) { animation-delay: 0.24s; }
 `;
 const MessageBubble = styled.div<{ $sender: string; $messageType: string; $isUploading?: boolean; $uploadError?: boolean; }>`
   position: relative;
@@ -882,13 +936,31 @@ const ReactionsContainer = styled.div<{ $sender: 'me' | 'other' }>`
   z-index: 1;
   display: flex;
   align-items: center;
-  background: rgba(240, 242, 245, 0.8);
-  backdrop-filter: blur(5px);
-  border-radius: 15px;
-  padding: 2px 5px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 20px;
+  padding: 3px 8px 3px 6px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.04);
   cursor: pointer;
-  animation: ${popIn} 0.2s ease-out forwards;
+  animation: ${reactionPillPop} 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+
+  &:hover {
+    transform: scale(1.08);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.14), 0 0 0 1px rgba(59, 130, 246, 0.15);
+  }
+  &:active {
+    transform: scale(0.96);
+  }
+
+  [data-theme='dark'] & {
+    background: rgba(30, 41, 59, 0.85);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06);
+    &:hover {
+      box-shadow: 0 4px 18px rgba(0,0,0,0.4), 0 0 0 1px rgba(96, 165, 250, 0.2);
+    }
+  }
 
   ${props => props.$sender === 'me' 
     ? `left: -10px;` 
@@ -1256,30 +1328,65 @@ const LinkPreviewDesc = styled.p<{ $sender: 'me' | 'other' }>`
 
 const ReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
   position: absolute;
-  background: var(--bg-elevated); 
-  border-radius: 20px; 
-  padding: 8px; 
+  background: var(--bg-elevated);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 24px; 
+  padding: 8px 10px; 
   display: flex; 
-  gap: 8px; 
-  box-shadow: var(--shadow-md); 
+  gap: 6px; 
+  box-shadow: 0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
   z-index: 60;
   border: 1px solid var(--border-primary);
   transition: background-color 0.3s ease;
-  animation: ${fadeInScale} 0.15s ease-out forwards;
+  animation: ${reactionPickerSlideIn} 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+
+  [data-theme='dark'] & {
+    background: rgba(30, 41, 59, 0.95);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  /* Stagger each emoji child */
+  & > button {
+    animation: ${staggerFadeIn} 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  & > button:nth-child(1) { animation-delay: 0.02s; }
+  & > button:nth-child(2) { animation-delay: 0.05s; }
+  & > button:nth-child(3) { animation-delay: 0.08s; }
+  & > button:nth-child(4) { animation-delay: 0.11s; }
+  & > button:nth-child(5) { animation-delay: 0.14s; }
+  & > button:nth-child(6) { animation-delay: 0.17s; }
+  & > button:nth-child(7) { animation-delay: 0.20s; }
 `;
 const ReactionEmoji = styled.button<{ $isPlusIcon?: boolean }>`
-  background: ${props => props.$isPlusIcon ? '#e2e8f0' : 'none'}; 
+  background: ${props => props.$isPlusIcon ? 'var(--bg-hover)' : 'none'};
   border: none; 
   font-size: 24px; 
   cursor: pointer; 
-  transition: transform 0.1s ease, background-color 0.2s ease;
-  border-radius: ${props => props.$isPlusIcon ? '50%' : '0'};
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease, box-shadow 0.2s ease;
+  border-radius: ${props => props.$isPlusIcon ? '50%' : '8px'};
   width: ${props => props.$isPlusIcon ? '36px' : 'auto'};
   height: ${props => props.$isPlusIcon ? '36px' : 'auto'};
+  padding: ${props => props.$isPlusIcon ? '0' : '2px 4px'};
   display: ${props => props.$isPlusIcon ? 'flex' : 'inline-flex'};
   align-items: center;
   justify-content: center;
-  &:hover { transform: scale(1.2); }
+  position: relative;
+
+  &:hover {
+    transform: scale(1.28);
+    background: ${props => props.$isPlusIcon ? 'var(--bg-hover)' : 'rgba(59, 130, 246, 0.08)'};
+  }
+  &:active {
+    animation: ${emojiPopTap} 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  [data-theme='dark'] & {
+    background: ${props => props.$isPlusIcon ? 'var(--bg-hover)' : 'none'};
+    &:hover {
+      background: ${props => props.$isPlusIcon ? 'var(--bg-hover)' : 'rgba(96, 165, 250, 0.12)'};
+    }
+  }
 `;
 
 const ReactionsPopup = ({
@@ -1379,50 +1486,72 @@ const ReactionsPopup = ({
   );
 };
 
+const reactionsModalFadeIn = keyframes`
+  from { opacity: 0; }
+  to   { opacity: 1; }
+`;
+
+const reactionsContentSlideUp = keyframes`
+  0%   { opacity: 0; transform: translateY(30px) scale(0.95); }
+  60%  { opacity: 1; transform: translateY(-4px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+`;
+
 const ReactionsPopupModal = styled.div`
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.25);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
+  animation: ${reactionsModalFadeIn} 0.2s ease-out forwards;
+
+  [data-theme='dark'] & {
+    background: rgba(0,0,0,0.45);
+  }
 `;
 
 const ReactionsPopupContent = styled.div`
-  position: absolute; // Changed from flex item to absolute
-  background: white; // Dark background
-  color: #2d3748; // Light text
-  border-radius: 8px;
+  position: absolute;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-radius: 16px;
   width: 90%;
   max-width: 400px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 4px 16px rgba(0,0,0,0.08);
   display: flex;
   flex-direction: column;
-  animation: ${popIn} 0.2s ease-out;
-  border: 1px solid #e2e8f0;
+  animation: ${reactionsContentSlideUp} 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  border: 1px solid var(--border-primary);
+  overflow: hidden;
+
+  [data-theme='dark'] & {
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.25);
+  }
 `;
 
 const ReactionsPopupHeader = styled.div`
-  padding: 0 16px; // Remove vertical padding
-  border-bottom: 1px solid #e2e8f0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-primary);
   display: flex;
   gap: 16px;
   overflow-x: auto;
-  // Custom scrollbar for a cleaner look
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e0 #f7fafc;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
   &::-webkit-scrollbar {
     height: 6px;
   }
   &::-webkit-scrollbar-track {
-    background: #f7fafc;
+    background: transparent;
   }
   &::-webkit-scrollbar-thumb {
-    background-color: #cbd5e0;
+    background-color: var(--scrollbar-thumb);
     border-radius: 3px;
   }
 `;
@@ -1430,42 +1559,61 @@ const ReactionsPopupHeader = styled.div`
 const ReactionTab = styled.button<{ active: boolean }>`
   background: none;
   border: none;
-  color: ${props => props.active ? '#3B82F6' : '#4a5568'};
+  color: ${props => props.active ? 'var(--accent-blue)' : 'var(--text-secondary)'};
   font-size: 1rem;
   font-weight: bold;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 4px;
-  border-bottom: 2px solid ${props => props.active ? '#3B82F6' : 'transparent'};
-  transition: all 0.2s ease;
+  padding: 10px 6px;
+  border-bottom: 2.5px solid ${props => props.active ? 'var(--accent-blue)' : 'transparent'};
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  white-space: nowrap;
 
   &:hover {
-    color: #3B82F6;
+    color: var(--accent-blue);
+    transform: translateY(-1px);
   }
 `;
 
+const userRowFadeIn = keyframes`
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+`;
+
 const ReactionsUserList = styled.div`
-  padding: 8px 16px 16px 16px;
+  padding: 10px 16px 16px 16px;
   max-height: 300px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+
+  & > div {
+    animation: ${userRowFadeIn} 0.3s ease-out both;
+  }
+  & > div:nth-child(1) { animation-delay: 0.05s; }
+  & > div:nth-child(2) { animation-delay: 0.1s; }
+  & > div:nth-child(3) { animation-delay: 0.15s; }
+  & > div:nth-child(4) { animation-delay: 0.2s; }
+  & > div:nth-child(5) { animation-delay: 0.25s; }
+  & > div:nth-child(6) { animation-delay: 0.3s; }
 `;
 
 const UserAvatar = styled.div`
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background-color: #e2e8f0;
-  color: #4a5568;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
+  color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: bold;
-  font-size: 0.9rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
 `;
 
 const ReactionUserRow = styled.div`
@@ -1473,18 +1621,35 @@ const ReactionUserRow = styled.div`
   align-items: center;
   gap: 12px;
   font-size: 1rem;
+  padding: 6px 8px;
+  border-radius: 10px;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: var(--bg-hover);
+  }
 `;
 
 const ReactionEmojiSpan = styled.span`
   font-size: 15px;
-  margin-right: -4px; /* Overlap emojis slightly */
+  margin-right: -2px;
+  display: inline-block;
+  animation: ${reactionBounceIn} 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transition: transform 0.15s ease;
+
+  &:nth-child(1) { animation-delay: 0s; }
+  &:nth-child(2) { animation-delay: 0.06s; }
+  &:nth-child(3) { animation-delay: 0.12s; }
 `;
 
 const ReactionCountSpan = styled.span`
   font-size: 12px;
-  font-weight: 500;
-  color: #4a5568; // Darker text for readability
-  margin-left: 8px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-left: 6px;
+  display: inline-block;
+  animation: ${countBump} 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
+  font-variant-numeric: tabular-nums;
 `;
 const MessageActions = styled.div`
   position: absolute; 
