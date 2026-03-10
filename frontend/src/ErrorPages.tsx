@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from './ThemeContext';
 
@@ -173,7 +173,7 @@ const ErrorCode = styled.h1<{ $hasGlitch?: boolean }>`
   position: relative;
   user-select: none;
 
-  ${p => p.$hasGlitch ? `
+  ${p => p.$hasGlitch && css`
     &::after {
       content: attr(data-code);
       position: absolute;
@@ -187,7 +187,7 @@ const ErrorCode = styled.h1<{ $hasGlitch?: boolean }>`
       animation: ${glitch} 3s ease-in-out infinite;
       opacity: 0.4;
     }
-  ` : ''}
+  `}
 `;
 
 const OrbitRing = styled.div`
