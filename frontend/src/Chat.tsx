@@ -1800,26 +1800,27 @@ const ReactionCountSpan = styled.span`
 `;
 const MessageActions = styled.div`
   position: absolute; 
-  top: 3px;
-  right: 3px;
-  bottom: auto;
+  bottom: calc(100% - 6px);
+  top: auto;
+  right: 6px;
   display: flex; 
   gap: 4px; 
   background: var(--bg-elevated); 
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 2px 10px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04); 
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04); 
   border-radius: 20px; 
   padding: 3px; 
   opacity: 0; 
-  transform: scale(0.7);
-  transform-origin: top right;
-  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); 
+  transform: translateY(6px) scale(0.9);
+  transform-origin: bottom right;
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); 
   z-index: 32; 
   pointer-events: none;
-  /* Fires whenever the pointer is anywhere inside MessageBubble (including
-     over this element itself, since it is a DOM child of MessageBubble). */
-  ${MessageBubble}:hover & { opacity: 1; pointer-events: all; transform: scale(1); }
+  /* CSS :hover on a parent element fires whenever the pointer is over
+     ANY descendant in the DOM tree — including this div even though it
+     visually sits above the bubble.  So there is zero hover gap. */
+  ${MessageBubble}:hover & { opacity: 1; pointer-events: all; transform: translateY(0) scale(1); }
   [data-theme='dark'] & {
     box-shadow: 0 2px 10px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06);
   }
