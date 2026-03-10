@@ -1,0 +1,6 @@
+# Netlify SPA redirect — serves index.html for every path so React Router
+# handles routing (including the custom 404 error page).
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

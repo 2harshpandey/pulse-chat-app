@@ -1800,26 +1800,28 @@ const ReactionCountSpan = styled.span`
 `;
 const MessageActions = styled.div`
   position: absolute; 
-  bottom: 100%;
-  top: auto;
-  margin-bottom: 2px;
-  right: 12px; 
+  top: 3px;
+  right: 3px;
+  bottom: auto;
   display: flex; 
-  gap: 8px; 
+  gap: 4px; 
   background: var(--bg-elevated); 
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04); 
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04); 
   border-radius: 20px; 
-  padding: 4px; 
+  padding: 3px; 
   opacity: 0; 
-  transform: translateY(4px) scale(0.95);
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); 
+  transform: scale(0.7);
+  transform-origin: top right;
+  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); 
   z-index: 32; 
   pointer-events: none;
-  ${MessageBubble}:hover & { opacity: 1; pointer-events: all; transform: translateY(0) scale(1); }
+  /* Fires whenever the pointer is anywhere inside MessageBubble (including
+     over this element itself, since it is a DOM child of MessageBubble). */
+  ${MessageBubble}:hover & { opacity: 1; pointer-events: all; transform: scale(1); }
   [data-theme='dark'] & {
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06);
   }
 `;
 const ActionButton = styled.button`
@@ -2434,7 +2436,6 @@ const MessageItem = React.memo(({
   }, [isSelectModeActive]);
 
   const sender = msg.userId === currentUserId ? 'me' : 'other';
-  const [isMessageBubbleHovered, setIsMessageBubbleHovered] = useState(false);
 
   const messageTime = new Date(msg.timestamp).getTime();
   const now = new Date().getTime();
@@ -2522,8 +2523,6 @@ const MessageItem = React.memo(({
           $isUploading={msg.isUploading} 
           $uploadError={msg.uploadError}
           style={{ marginBottom: (!isDeleted && msg.reactions && Object.keys(msg.reactions).length > 0) ? '18px' : undefined }}
-          onMouseEnter={() => setIsMessageBubbleHovered(true)}
-          onMouseLeave={() => setIsMessageBubbleHovered(false)}
         >
           {msg.replyingTo && (
             <QuotedMessageContainer $sender={sender} onClick={() => { if (msg.replyingTo) scrollToMessage(msg.replyingTo.id); }}>
@@ -2633,7 +2632,7 @@ const MessageItem = React.memo(({
                   )}
                 </MobileReactionPicker>
               )}
-              {!isMobileView && isMessageBubbleHovered && ( // Only show on PC when message bubble is hovered
+              {!isMobileView && (
                 <MessageActions>
                   <ActionButton ref={reactButtonRef} className="react-action-button" onClick={() => onOpenReactionPicker(msg.id, reactButtonRef.current!.getBoundingClientRect(), sender)} title="React">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
