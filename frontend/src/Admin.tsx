@@ -124,6 +124,16 @@ const Title = styled.h1`
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: inherit;
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--accent-blue);
+  }
   span {
     background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
     -webkit-background-clip: text;
@@ -217,6 +227,11 @@ const AdminBrandWordmark = styled.h1`
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  transition: color 0.2s ease;
+
+  &:hover {
+    color: var(--accent-blue);
+  }
 
   span {
     background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
@@ -582,6 +597,7 @@ const Table = styled.table`
   transition: color 0.3s ease;
   animation: ${slideUp} 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 `;
+const Th = styled.th`
   padding: 0.75rem;
   text-align: left;
   border-bottom: 2px solid var(--border-primary);
@@ -626,6 +642,11 @@ const NoWrapTd = styled(Td)`
 // Td variant that absorbs all remaining horizontal space — used for the Details column
 const ExpandTd = styled(Td)`
   width: 100%;
+`;
+
+// Table variant with min-width for horizontal-scroll tables (audit log)
+const WideTable = styled(Table)`
+  min-width: 700px;
 `;
 
 const LogoutButton = styled(Button)`
@@ -1595,7 +1616,12 @@ const Admin = () => {
   return (
     <AdminContainer>
       <HeaderRow>
-        <Title><img src="/pulse_logo.png" alt="Pulse Admin Panel" /><span>Pulse</span> Chat</Title>
+        <Title>
+          <a href="/admin">
+            <img src="/pulse_logo.png" alt="Pulse Admin Panel" />
+            <span>Pulse</span> Chat
+          </a>
+        </Title>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {lockdownStatus.isActive && (
             <Badge $color="red"><StatusDot $color="red" /> Lockdown Active</Badge>

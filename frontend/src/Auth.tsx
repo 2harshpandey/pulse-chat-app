@@ -199,6 +199,11 @@ const BrandWordmark = styled.h1`
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  transition: color 0.2s ease;
+
+  &:hover {
+    color: var(--accent-blue);
+  }
 
   span {
     background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));

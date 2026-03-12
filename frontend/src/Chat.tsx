@@ -384,6 +384,16 @@ const HeaderTitle = styled.h1`
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  a {
+    color: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  a:hover {
+    color: var(--accent-blue);
+  }
   span {
     background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
     -webkit-background-clip: text;
