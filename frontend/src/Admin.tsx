@@ -124,6 +124,12 @@ const Title = styled.h1`
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  span {
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
   img {
     height: 44px;
     width: auto;
@@ -201,6 +207,23 @@ const AdminBrandLogo = styled.img`
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: none;
+`;
+const AdminBrandWordmark = styled.h1`
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0 0 0.35rem 0;
+  color: var(--text-heading);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+
+  span {
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
 `;
 
 const AdminHeartbeatSvg = styled.svg`
@@ -559,12 +582,6 @@ const Table = styled.table`
   transition: color 0.3s ease;
   animation: ${slideUp} 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 `;
-
-const WideTable = styled(Table)`
-  min-width: 580px;
-`;
-
-const Th = styled.th`
   padding: 0.75rem;
   text-align: left;
   border-bottom: 2px solid var(--border-primary);
@@ -1533,6 +1550,7 @@ const Admin = () => {
           </AdminThemeToggle>
           <AdminLoginBrand>
             <AdminBrandLogo src="/pulse_logo.png" alt="Pulse Admin" />
+            <AdminBrandWordmark><span>Pulse</span> Chat</AdminBrandWordmark>
             <AdminHeartbeatSvg viewBox="0 0 120 30" width="120" height="30">
               <path d="M0 15 L30 15 L38 5 L46 25 L54 8 L60 15 L90 15 L98 5 L106 25 L114 8 L120 15" />
             </AdminHeartbeatSvg>
@@ -1577,7 +1595,7 @@ const Admin = () => {
   return (
     <AdminContainer>
       <HeaderRow>
-        <Title><img src="/pulse_logo.png" alt="Pulse Admin Panel" /></Title>
+        <Title><img src="/pulse_logo.png" alt="Pulse Admin Panel" /><span>Pulse</span> Chat</Title>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {lockdownStatus.isActive && (
             <Badge $color="red"><StatusDot $color="red" /> Lockdown Active</Badge>

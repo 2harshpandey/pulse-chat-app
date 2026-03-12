@@ -190,15 +190,30 @@ const BrandLogo = styled.img`
   pointer-events: none;
 `;
 
-const BrandName = styled.h1`
+const BrandWordmark = styled.h1`
   font-size: 2.2rem;
   font-weight: 800;
-  background: linear-gradient(135deg, var(--text-heading), var(--accent-indigo));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
   letter-spacing: -0.03em;
-  margin-bottom: 0;
+  margin-bottom: 0.2rem;
+  color: var(--text-heading);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+
+  span {
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+`;
+
+const BrandTagline = styled.div`
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 0.35rem;
+  transition: color 0.3s ease;
 `;
 
 const HeartbeatSvg = styled.svg`
@@ -474,7 +489,8 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess, tempToken }) => {
 
             <BrandSection>
               <BrandLogo src="/pulse_logo.png" alt="Pulse" />
-              {isTempLink && <BrandName>You're Invited!</BrandName>}
+              <BrandWordmark><span>Pulse</span> Chat</BrandWordmark>
+              {isTempLink && <BrandTagline>You're Invited!</BrandTagline>}
               <HeartbeatSvg viewBox="0 0 120 30" width="120" height="30">
                 <path d="M0 15 L30 15 L38 5 L46 25 L54 8 L60 15 L90 15 L98 5 L106 25 L114 8 L120 15" />
               </HeartbeatSvg>

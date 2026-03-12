@@ -384,6 +384,12 @@ const HeaderTitle = styled.h1`
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  span {
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
   img {
     height: 32px;
     width: auto;
@@ -4249,7 +4255,7 @@ function Chat() {
       )}
       <AppContainer>
         <Header>
-          <HeaderTitle><a href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit' }}><img src="/pulse_logo.png" alt="Pulse Chat" style={{ height: '44px' }} /></a></HeaderTitle>
+          <HeaderTitle><a href="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', gap: '0.5rem' }}><img src="/pulse_logo.png" alt="Pulse Chat" style={{ height: '44px' }} /><span>Pulse</span> Chat</a></HeaderTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ThemeToggleBtn onClick={toggleTheme} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-label="Toggle theme">
               {isDark ? (
