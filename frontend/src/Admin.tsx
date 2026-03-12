@@ -1577,7 +1577,7 @@ const Admin = () => {
             )}
           </AdminThemeToggle>
           <AdminLoginBrand>
-            <AdminBrandLogo src="/pulse_logo.png" alt="Pulse Admin" />
+            <AdminBrandLogo src="/pulse_logo.webp" alt="Pulse Admin" />
             <AdminBrandWordmark><span>Pulse</span> Chat</AdminBrandWordmark>
             <AdminHeartbeatSvg viewBox="0 0 120 30" width="120" height="30">
               <path d="M0 15 L30 15 L38 5 L46 25 L54 8 L60 15 L90 15 L98 5 L106 25 L114 8 L120 15" />
@@ -1630,7 +1630,7 @@ const Admin = () => {
       <HeaderRow>
         <Title>
           <a href="/admin">
-            <img src="/pulse_logo.png" alt="Pulse Admin Panel" />
+            <img src="/pulse_logo.webp" alt="Pulse Admin Panel" />
             <span>Pulse</span> Chat
           </a>
         </Title>

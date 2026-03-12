@@ -496,7 +496,7 @@ const Auth: React.FC<AuthProps> = ({ onAuthSuccess, tempToken }) => {
             </TopBar>
 
             <BrandSection>
-              <BrandLogo src="/pulse_logo.png" alt="Pulse" />
+              <BrandLogo src="/pulse_logo.webp" alt="Pulse" />
               <BrandWordmark><span>Pulse</span> Chat</BrandWordmark>
               {isTempLink && <BrandTagline>You're Invited!</BrandTagline>}
               <HeartbeatSvg viewBox="0 0 120 30" width="120" height="30">

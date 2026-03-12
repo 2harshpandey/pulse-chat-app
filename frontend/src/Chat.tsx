@@ -4271,7 +4271,7 @@ function Chat() {
       )}
       <AppContainer>
         <Header>
-          <HeaderTitle><a href="/"><img src="/pulse_logo.png" alt="Pulse Chat" /><span>Pulse</span> Chat</a></HeaderTitle>
+          <HeaderTitle><a href="/"><img src="/pulse_logo.webp" alt="Pulse Chat" /><span>Pulse</span> Chat</a></HeaderTitle>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ThemeToggleBtn onClick={toggleTheme} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-label="Toggle theme">
               {isDark ? (
