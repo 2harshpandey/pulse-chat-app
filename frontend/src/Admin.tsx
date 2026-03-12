@@ -1021,6 +1021,7 @@ const UserCardActions = styled.div`
 interface UserProfile {
   userId: string;
   username: string;
+  createdAt?: string;
 }
 
 interface TempLinkData {
@@ -1490,6 +1491,14 @@ const Admin = () => {
     return historyLogs.map(log => ({ ...log, username: log.username || userMap.get(log.userId) || 'Unknown' }));
   }, [historyLogs, users]);
 
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [users]);
+
   const filteredHistoryLogs = useMemo(() => {
     return enrichedHistoryLogs.filter(log => {
       const messageIdMatch = filterMessageId ? (log.messageId || log.message?.id)?.toLowerCase().includes(filterMessageId.toLowerCase()) : true;
@@ -1773,7 +1782,7 @@ const Admin = () => {
               <Table>
                 <thead><tr><Th>User ID</Th><Th>Username</Th></tr></thead>
                 <tbody>
-                  {users.map(user => (
+                  {sortedUsers.map(user => (
                     <tr key={user.userId}>
                       <Td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#64748b' }}>{user.userId}</Td>
                       <Td>{user.username}</Td>
@@ -1783,7 +1792,7 @@ const Admin = () => {
               </Table>
             </ResponsiveTableWrapper>
             <MobileCardList>
-              {users.map(user => (
+              {sortedUsers.map(user => (
                 <UserCard key={user.userId}>
                   <UserCardHeader>
                     <strong style={{ fontSize: '1rem' }}>{user.username}</strong>
