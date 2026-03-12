@@ -18,6 +18,9 @@ lerna-debug.log*
 # Build output
 /frontend/build/
 
+# Archived notes (should not be tracked)
+/frontend/old_chats/
+
 # Misc
 .DS_Store
 .vscode/
