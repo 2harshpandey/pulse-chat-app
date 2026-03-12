@@ -2623,6 +2623,9 @@ const MessageItem = React.memo(({
                   >&#8942;</ActionButton>
                 </MessageActions>
               )}
+              <FooterContainer $sender={sender}>
+                <Timestamp $sender={sender}>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
+              </FooterContainer>
             </>
           ) : isEditing ? (
             msg.url ? (
