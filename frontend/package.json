@@ -6,7 +6,6 @@
     "@testing-library/jest-dom": "^5.16.5",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
-    "@types/jest": "^27.5.2",
     "@types/react": "18.2.79",
     "@types/react-dom": "18.2.25",
     "@use-gesture/react": "^10.2.24",
@@ -14,23 +13,16 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.6.2",
-    "react-scripts": "^5.0.1",
     "react-virtuoso": "^4.18.3",
     "styled-components": "^5.3.6",
     "typescript": "^4.9.4",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
+    "start": "vite",
+    "build": "vite build",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "browserslist": {
     "production": [
@@ -45,12 +37,19 @@
     ]
   },
   "devDependencies": {
-    "@types/node": "^18.19.130",
-    "@types/styled-components": "^5.1.26"
+    "@tailwindcss/postcss": "^4.2.1",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^20.19.0",
+    "@types/styled-components": "^5.1.26",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.27",
+    "jsdom": "^24.1.3",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.0"
   },
   "overrides": {
     "rollup": ">=2.80.0",
-    "minimatch": "3.1.2",
+    "minimatch": "3.1.4",
     "serialize-javascript": ">=7.0.3",
     "@remix-run/router": ">=1.23.2",
     "nth-check": ">=2.0.1",
