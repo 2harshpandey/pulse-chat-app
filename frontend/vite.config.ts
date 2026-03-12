@@ -23,6 +23,35 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'build',
+      rollupOptions: {
+        output: {
+          manualChunks(moduleId) {
+            if (!moduleId.includes('node_modules')) return;
+            if (moduleId.includes('react-router-dom') || moduleId.includes('react-router') || moduleId.includes('@remix-run/router')) {
+              return 'router-vendor';
+            }
+            if (moduleId.includes('react-dom')) {
+              return 'react-dom-vendor';
+            }
+            if (moduleId.includes('/react/')) {
+              return 'react-core-vendor';
+            }
+            if (moduleId.includes('styled-components')) {
+              return 'ui-vendor';
+            }
+            if (moduleId.includes('emoji-picker-react')) {
+              return 'emoji-vendor';
+            }
+            if (moduleId.includes('react-virtuoso')) {
+              return 'virtuoso-vendor';
+            }
+            if (moduleId.includes('@use-gesture/react')) {
+              return 'gesture-vendor';
+            }
+            return 'vendor';
+          },
+        },
+      },
     },
     define: {
       'process.env': compatEnv,
