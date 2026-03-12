@@ -891,6 +891,14 @@ const AuditLogEntry = styled.div<{ $type?: string }>`
   @media (max-width: 480px) { padding: 0.5rem 0.6rem; font-size: 0.8rem; }
 `;
 
+const AdminLogLink = styled.a`
+  color: #3B82F6;
+  text-decoration: none;
+  font-weight: 600;
+  &:hover { text-decoration: underline; }
+  [data-theme='dark'] & { color: #f59e0b; }
+`;
+
 const ScrollContainer = styled.div`
   flex: 1;
   min-height: 0;
@@ -1464,7 +1472,7 @@ const Admin = () => {
         const isGif = isTenorUrl(content.url);
         const fileName = content.originalName || (isGif ? 'GIF' : 'Uploaded File');
         const safeHref = sanitizeUrl(content.url);
-        return <>{text && `"${text}" `}{safeHref ? <a href={safeHref} target="_blank" rel="noopener noreferrer">[{fileName}]</a> : <span>[{fileName}]</span>}</>;
+        return <>{text && `"${text}" `}{safeHref ? <AdminLogLink href={safeHref} target="_blank" rel="noopener noreferrer">[{fileName}]</AdminLogLink> : <span>[{fileName}]</span>}</>;
       }
       return `"${text}"`;
     };
