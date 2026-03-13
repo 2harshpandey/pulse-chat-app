@@ -573,24 +573,24 @@ const EditActions = styled.div`
 const FooterContainer = styled.div<{ $sender: 'me' | 'other' }>`
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  margin-top: 1px;
+  gap: 4px;
+  margin-top: 0;
 
   ${props => props.$sender === 'me' 
     ? `
       justify-content: flex-end;
-      padding-right: 6px;
+      padding-right: 2px;
     ` 
     : `
       justify-content: flex-start;
-      padding-left: 6px;
+      padding-left: 2px;
     `
   }
 `;
 
 const Timestamp = styled.div<{ $sender: string }>`
-  font-size: 0.75rem;
-  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  margin-top: 0;
   text-align: right;
   white-space: nowrap;
   color: ${props => props.$sender === 'me' ? '#bfdbfe' : 'var(--text-muted)'};
@@ -1951,6 +1951,7 @@ const MessageText = styled.p`
   white-space: pre-wrap;
   word-wrap: break-word;
   cursor: text;
+  margin: 0;
   font-size: 0.92rem;
   line-height: 1.35;
   @media (max-width: 768px) {
