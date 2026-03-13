@@ -61,8 +61,8 @@ Steps (frontend and backend in parallel)
 1. Clone the repo and install dependencies:
 
 ```powershell
-git clone https://github.com/<your-org>/pulse-app.git
-cd "pulse-app"
+git clone https://github.com/<your-org>/pulse-chat.git
+cd "pulse-chat"
 ```
 
 2. Backend (in a terminal):
