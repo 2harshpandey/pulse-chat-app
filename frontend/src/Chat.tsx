@@ -532,7 +532,7 @@ const MobileReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
 const MessageBubble = styled.div<{ $sender: string; $messageType: string; $isUploading?: boolean; $uploadError?: boolean; }>`
   position: relative;
   max-width: ${props => props.$messageType === 'text' ? '62%' : '68%'};
-  padding: ${props => props.$messageType === 'text' ? '0.28rem 0.48rem' : '0.28rem 0.34rem'};
+  padding: ${props => props.$messageType === 'text' ? '0.24rem 0.48rem 0.12rem' : '0.28rem 0.34rem'};
   border-radius: 0.82rem;
   background-color: ${props => props.$sender === 'me' ? '#3B82F6' : 'var(--bg-message-other)'};
   color: ${props => props.$sender === 'me' ? 'white' : 'var(--text-primary)'};
