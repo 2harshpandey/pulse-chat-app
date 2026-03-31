@@ -123,6 +123,7 @@ const VIRTUOSO_OVERSCAN_DESKTOP = 128;
 const VIRTUOSO_OVERSCAN_MOBILE = 96;
 const VIRTUOSO_VIEWPORT_BY_DESKTOP = { top: 240, bottom: 160 };
 const VIRTUOSO_VIEWPORT_BY_MOBILE = { top: 180, bottom: 120 };
+const MAX_NEW_MESSAGE_INDICATOR_COUNT = 99;
 
 // --- STYLED COMPONENTS ---
 export const GlobalStyle = createGlobalStyle`
@@ -254,6 +255,11 @@ const sidebarItemSlide = keyframes`
 const scrollBtnBounce = keyframes`
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-3px); }
+`;
+
+const newMessageBadgeGlow = keyframes`
+  0%, 100% { box-shadow: 0 3px 10px rgba(37, 99, 235, 0.35); }
+  50%      { box-shadow: 0 5px 14px rgba(14, 165, 233, 0.48); }
 `;
 
 const EmojiPickerWrapper = styled.div`
@@ -3021,6 +3027,43 @@ const ScrollToBottomButton = styled.button<{ $isVisible: boolean }>`
   }
 `;
 
+const NewMessagesBadge = styled.span<{ $isVisible: boolean }>`
+  position: absolute;
+  top: -6px;
+  right: -7px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
+  color: #ffffff;
+  font-size: 0.64rem;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  opacity: ${props => props.$isVisible ? 1 : 0};
+  transform: ${props => props.$isVisible ? 'translateY(0) scale(1)' : 'translateY(4px) scale(0.72)'};
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: ${props => props.$isVisible ? newMessageBadgeGlow : 'none'} 2.2s ease-in-out infinite;
+  pointer-events: none;
+
+  [data-theme='dark'] & {
+    border-color: rgba(148, 197, 255, 0.82);
+  }
+
+  @media (max-width: 768px) {
+    top: -5px;
+    right: -5px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    font-size: 0.58rem;
+  }
+`;
+
 
 // ---------------------------------------------------------------------------
 // "Delete for me" persistence helpers
@@ -3078,6 +3121,7 @@ function Chat() {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>('');
   const [isScrollToBottomVisible, setIsScrollToBottomVisible] = useState(false);
+  const [newMessagesWhileScrolledUp, setNewMessagesWhileScrolledUp] = useState(0);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [hasMoreOlderMessages, setHasMoreOlderMessages] = useState(true);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
@@ -3111,6 +3155,7 @@ function Chat() {
   const initialHistoryBottomStabilized = useRef(false);
   // Tracks whether the user is currently at the bottom of the chat.
   const isAtBottomRef = useRef(true);
+  const messageTailSnapshotRef = useRef<{ length: number; lastId: string | null }>({ length: 0, lastId: null });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addFileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
@@ -3146,6 +3191,48 @@ function Chat() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    const currentLength = messages.length;
+    const currentLastId = currentLength > 0 ? messages[currentLength - 1].id : null;
+    const prevSnapshot = messageTailSnapshotRef.current;
+
+    if (!historyLoaded) {
+      messageTailSnapshotRef.current = { length: currentLength, lastId: currentLastId };
+      return;
+    }
+
+    if (!isAtBottomRef.current && currentLength > prevSnapshot.length && prevSnapshot.length > 0) {
+      let appendedStart = -1;
+
+      if (messages[prevSnapshot.length - 1]?.id === prevSnapshot.lastId) {
+        appendedStart = prevSnapshot.length;
+      } else if (prevSnapshot.lastId) {
+        const previousLastIndex = messages.findIndex((m) => m.id === prevSnapshot.lastId);
+        if (previousLastIndex >= 0 && previousLastIndex < currentLength - 1) {
+          appendedStart = previousLastIndex + 1;
+        }
+      }
+
+      if (appendedStart >= 0) {
+        const incomingCount = messages
+          .slice(appendedStart)
+          .reduce((count, msg) => {
+            if (msg.type === 'system_notification') return count;
+            if (msg.userId === userIdRef.current) return count;
+            return count + 1;
+          }, 0);
+
+        if (incomingCount > 0) {
+          setNewMessagesWhileScrolledUp((prev) =>
+            Math.min(prev + incomingCount, MAX_NEW_MESSAGE_INDICATOR_COUNT)
+          );
+        }
+      }
+    }
+
+    messageTailSnapshotRef.current = { length: currentLength, lastId: currentLastId };
+  }, [historyLoaded, messages]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputMessage(e.target.value);
@@ -3382,6 +3469,11 @@ function Chat() {
           const processed = filterVisibleMessages(rawHistory.map(normalizeMessage));
 
           setMessages(processed);
+          setNewMessagesWhileScrolledUp(0);
+          messageTailSnapshotRef.current = {
+            length: processed.length,
+            lastId: processed.length > 0 ? processed[processed.length - 1].id : null,
+          };
           setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
           const cursorFromServer = typeof messageData.oldestCreatedAt === 'string' && messageData.oldestCreatedAt
             ? messageData.oldestCreatedAt
@@ -3400,6 +3492,8 @@ function Chat() {
         } else if (messageData.type === 'chat_cleared') {
           // Admin cleared all messages — wipe the local list immediately.
           setMessages([]);
+          setNewMessagesWhileScrolledUp(0);
+          messageTailSnapshotRef.current = { length: 0, lastId: null };
           setHasMoreOlderMessages(false);
           setOldestLoadedAt(null);
           setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
@@ -4233,6 +4327,9 @@ function Chat() {
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     isAtBottomRef.current = atBottom;
     setIsScrollToBottomVisible(!atBottom);
+    if (atBottom) {
+      setNewMessagesWhileScrolledUp(0);
+    }
   }, []);
 
   // Clicking on empty space in the chat area focuses the input (WhatsApp-style).
@@ -4310,6 +4407,16 @@ function Chat() {
   const selectedMessageIds = useMemo(() => new Set(selectedMessages), [selectedMessages]);
   const selectedMessage = messages.find(msg => msg.id === selectedMessages[0]);
   const canEditSelectedMessage = selectedMessages.length === 1 && selectedMessage && selectedMessage.userId === userIdRef.current && selectedMessage.text && (new Date().getTime() - new Date(selectedMessage.timestamp).getTime()) < 15 * 60 * 1000;
+  const hasNewMessagesIndicator = newMessagesWhileScrolledUp > 0;
+  const newMessagesIndicatorLabel = newMessagesWhileScrolledUp > MAX_NEW_MESSAGE_INDICATOR_COUNT
+    ? `${MAX_NEW_MESSAGE_INDICATOR_COUNT}+`
+    : String(newMessagesWhileScrolledUp);
+  const scrollToLatestLabel = hasNewMessagesIndicator
+    ? `Scroll to latest messages (${newMessagesWhileScrolledUp} new)`
+    : 'Scroll to latest messages';
+  const scrollToLatestTitle = hasNewMessagesIndicator
+    ? `${newMessagesIndicatorLabel} new message${newMessagesWhileScrolledUp === 1 ? '' : 's'}`
+    : 'Scroll to latest messages';
   const virtuosoOverscan = isMobileView ? VIRTUOSO_OVERSCAN_MOBILE : VIRTUOSO_OVERSCAN_DESKTOP;
   const virtuosoIncreaseViewportBy = isMobileView ? VIRTUOSO_VIEWPORT_BY_MOBILE : VIRTUOSO_VIEWPORT_BY_DESKTOP;
   const virtuosoFollowOutput = (isAtBottom: boolean) => (isAtBottom ? 'smooth' : false);
@@ -4734,18 +4841,20 @@ function Chat() {
                 if (isMobileView && document.activeElement instanceof HTMLElement) {
                   document.activeElement.blur();
                 }
+                setNewMessagesWhileScrolledUp(0);
                 forceScrollToBottomAsync();
               }}
               onMouseDown={(e) => e.preventDefault()}
               onPointerDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
-              aria-label="Scroll to latest messages"
-              title="Scroll to latest messages"
+              aria-label={scrollToLatestLabel}
+              title={scrollToLatestTitle}
             >
               <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 5v14"></path>
                 <path d="m19 12-7 7-7-7"></path>
               </svg>
+              <NewMessagesBadge $isVisible={hasNewMessagesIndicator}>{newMessagesIndicatorLabel}</NewMessagesBadge>
             </ScrollToBottomButton>
             </MessagesAndScrollWrapper>
             <TypingIndicator onlineUsers={onlineUsers} currentUserId={userIdRef.current} />
@@ -4996,7 +5105,7 @@ function Chat() {
         </GifPickerModal>
       )}
     </>
-  );p
+  );
 }
 
 export default Chat;
