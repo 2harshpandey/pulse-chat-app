@@ -5072,12 +5072,19 @@ function Chat() {
                               </div>
                             );
                           }
-                          const prevMsg = messages[index - 1];
-                          const currentSenderKey = (msg.username?.trim().toLowerCase() || msg.userId || '').toString();
-                          const prevSenderKey = prevMsg
-                            ? (prevMsg.username?.trim().toLowerCase() || prevMsg.userId || '').toString()
-                            : '';
-                          const isSeriesContinuation = Boolean(prevMsg) && prevMsg!.type !== 'system_notification' && prevSenderKey === currentSenderKey;
+                          // With Virtuoso + firstItemIndex, `index` is an absolute virtual index.
+                          // Convert it to data-array index before looking at neighbors.
+                          const dataIndex = index - firstItemIndex;
+                          const prevMsg = dataIndex > 0 ? messages[dataIndex - 1] : null;
+                          const currentSenderId = (msg.userId || '').trim();
+                          const prevSenderId = (prevMsg?.userId || '').trim();
+                          const currentSenderName = (msg.username || '').trim().toLowerCase();
+                          const prevSenderName = (prevMsg?.username || '').trim().toLowerCase();
+                          const isSameSender = Boolean(prevMsg) && (
+                            (Boolean(currentSenderId) && Boolean(prevSenderId) && currentSenderId === prevSenderId) ||
+                            (Boolean(currentSenderName) && Boolean(prevSenderName) && currentSenderName === prevSenderName)
+                          );
+                          const isSeriesContinuation = Boolean(prevMsg) && prevMsg!.type !== 'system_notification' && isSameSender;
                           const showUsername = !isSeriesContinuation;
                           return (
                             <MessageItem
