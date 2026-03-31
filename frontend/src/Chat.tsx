@@ -92,6 +92,40 @@ const isTenorUrl = (url: string | undefined | null): boolean => {
   }
 };
 
+const withCloudinaryTransform = (url: string, transform: string): string => {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== 'res.cloudinary.com' && !host.endsWith('.res.cloudinary.com')) return '';
+
+    const marker = '/upload/';
+    const markerIndex = parsed.pathname.indexOf(marker);
+    if (markerIndex === -1) return '';
+
+    const prefix = parsed.pathname.slice(0, markerIndex + marker.length);
+    const rest = parsed.pathname.slice(markerIndex + marker.length);
+    if (!rest) return '';
+
+    parsed.pathname = `${prefix}${transform}/${rest}`;
+    return parsed.href;
+  } catch {
+    return '';
+  }
+};
+
+const getQuotedPreviewThumbUrl = (mediaType: 'image' | 'video', mediaUrl?: string): string => {
+  const safeUrl = sanitizeMediaUrl(mediaUrl);
+  if (!safeUrl) return '';
+
+  if (mediaType === 'video') {
+    // Cloudinary can generate a still thumbnail from the first frame.
+    return withCloudinaryTransform(safeUrl, 'so_0,f_jpg,q_20,w_96,h_96,c_fill') || '';
+  }
+
+  // Prefer a tiny compressed image variant for quoted previews.
+  return withCloudinaryTransform(safeUrl, 'f_auto,q_20,w_96,h_96,c_fill') || safeUrl;
+};
+
 /**
  * Module-level WeakMap cache for blob: URLs.
  * Keeping creation here (outside React's render/state data-flow) ensures
@@ -126,6 +160,7 @@ const VIRTUOSO_VIEWPORT_BY_MOBILE = { top: 180, bottom: 120 };
 const MAX_NEW_MESSAGE_INDICATOR_COUNT = 99;
 const MAX_LOADED_MEDIA_TRACKING = 800;
 const MAX_QUOTE_JUMP_STACK_DEPTH = 64;
+const MAX_QUOTE_AUTO_LOAD_PAGES = 120;
 const LONG_PRESS_CANCEL_MOVE_PX = 8;
 const COMPOSER_TEXTAREA_ID = 'chat-composer-input';
 
@@ -852,6 +887,7 @@ const mediaFrameStyles = css`
   position: relative;
   display: block;
   width: min(100%, 320px);
+  min-width: 208px;
   max-width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 0.75rem;
@@ -859,10 +895,12 @@ const mediaFrameStyles = css`
 
   @media (max-width: 768px) {
     width: min(100%, 236px);
+    min-width: 182px;
   }
 
   @media (max-width: 420px) {
     width: min(100%, 212px);
+    min-width: 164px;
   }
 `;
 
@@ -967,6 +1005,8 @@ const MediaLoadLabel = styled.span`
   font-weight: 600;
   letter-spacing: 0.01em;
   opacity: 0.95;
+  text-align: center;
+  padding: 0 0.35rem;
 `;
 
 /* Small inline download button for videos and file cards */
@@ -1557,6 +1597,38 @@ const ReplyText = styled.div`
       background: #253348;
     }
   `}
+`;
+
+const QuotedMediaThumb = styled.div`
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(15, 23, 42, 0.26);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  position: relative;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+`;
+
+const QuotedVideoBadge = styled.span`
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  font-size: 0.56rem;
+  font-weight: 700;
+  color: #f8fafc;
+  background: rgba(2, 6, 23, 0.72);
+  border: 1px solid rgba(226, 232, 240, 0.35);
+  border-radius: 999px;
+  padding: 1px 5px;
+  line-height: 1;
 `;
 
 const LinkPreviewCard = styled.a<{ $sender: 'me' | 'other' }>`
@@ -2339,7 +2411,7 @@ const renderMessageContent = (
               <MediaLoadIcon>
                 <DownloadSvg />
               </MediaLoadIcon>
-              <MediaLoadLabel>Tap to load photo</MediaLoadLabel>
+              <MediaLoadLabel>Tap to load</MediaLoadLabel>
             </MediaLoadGate>
           ) : msg.url ? (
             <img src={sanitizeMediaUrl(msg.url)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(msg.url); if (u) openLightbox(u); }} onPointerDown={() => onMediaPointerDown?.()} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
@@ -2374,7 +2446,7 @@ const renderMessageContent = (
               <MediaLoadIcon>
                 <DownloadSvg />
               </MediaLoadIcon>
-              <MediaLoadLabel>Tap to load video</MediaLoadLabel>
+              <MediaLoadLabel>Tap to load</MediaLoadLabel>
             </MediaLoadGate>
           </VideoPlayerWrapper>
         ) : (
@@ -2585,6 +2657,9 @@ const MessageItem = React.memo(({
   onVideoFullscreenEnter
 }: MessageItemProps) => {
   const isEditing = editingMessageId === msg.id;
+  const quotedPreviewThumbUrl = msg.replyingTo && !msg.replyingTo.isDeleted && (msg.replyingTo.type === 'image' || msg.replyingTo.type === 'video')
+    ? getQuotedPreviewThumbUrl(msg.replyingTo.type, msg.replyingTo.url)
+    : '';
   const editInputRef = useRef<HTMLTextAreaElement>(null!);
   const messageRowRef = useRef<HTMLDivElement>(null!);
   const messageBubbleRef = useRef<HTMLDivElement>(null!);
@@ -2959,26 +3034,38 @@ const MessageItem = React.memo(({
                 </span>
               </div>
               {!msg.replyingTo.isDeleted && msg.replyingTo.url && (msg.replyingTo.type === 'image' || msg.replyingTo.type === 'video') && (
-                <div
-                  style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '6px',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'rgba(15, 23, 42, 0.28)',
-                    border: '1px solid rgba(148, 163, 184, 0.35)',
-                    color: 'rgba(241, 245, 249, 0.95)',
-                    fontSize: '0.66rem',
-                    fontWeight: 600,
-                    letterSpacing: '0.02em',
-                    textTransform: 'uppercase'
-                  }}
-                >
-                  {msg.replyingTo.type === 'video' ? 'Video' : 'Photo'}
-                </div>
+                quotedPreviewThumbUrl ? (
+                  <QuotedMediaThumb>
+                    <img
+                      src={quotedPreviewThumbUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    {msg.replyingTo.type === 'video' && <QuotedVideoBadge>Video</QuotedVideoBadge>}
+                  </QuotedMediaThumb>
+                ) : (
+                  <div
+                    style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '6px',
+                      flexShrink: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: 'rgba(15, 23, 42, 0.28)',
+                      border: '1px solid rgba(148, 163, 184, 0.35)',
+                      color: 'rgba(241, 245, 249, 0.95)',
+                      fontSize: '0.66rem',
+                      fontWeight: 600,
+                      letterSpacing: '0.02em',
+                      textTransform: 'uppercase'
+                    }}
+                  >
+                    {msg.replyingTo.type === 'video' ? 'Video' : 'Photo'}
+                  </div>
+                )
               )}
             </QuotedMessageContainer>
           )}
@@ -3407,6 +3494,8 @@ function Chat() {
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [oldestLoadedAt, setOldestLoadedAt] = useState<string | null>(null);
   const [firstItemIndex, setFirstItemIndex] = useState(INITIAL_FIRST_ITEM_INDEX);
+  const hasMoreOlderMessagesRef = useRef(hasMoreOlderMessages);
+  const oldestLoadedAtRef = useRef<string | null>(oldestLoadedAt);
   // Use a ref (not state) for the message ID associated with the full emoji picker.
   // EmojiPicker from emoji-picker-react may cache its onEmojiClick prop and call
   // a stale closure — reading from a ref guarantees we always get the current value.
@@ -3502,6 +3591,14 @@ function Chat() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    hasMoreOlderMessagesRef.current = hasMoreOlderMessages;
+  }, [hasMoreOlderMessages]);
+
+  useEffect(() => {
+    oldestLoadedAtRef.current = oldestLoadedAt;
+  }, [oldestLoadedAt]);
 
   useEffect(() => {
     const currentLength = messages.length;
@@ -3871,12 +3968,14 @@ function Chat() {
           const cursorFromServer = typeof messageData.oldestCreatedAt === 'string' && messageData.oldestCreatedAt
             ? messageData.oldestCreatedAt
             : null;
-          setOldestLoadedAt(cursorFromServer || getMessageCursor(processed[0]));
-          setHasMoreOlderMessages(
-            typeof messageData.hasMoreHistory === 'boolean'
-              ? messageData.hasMoreHistory
-              : processed.length >= INITIAL_HISTORY_BATCH_SIZE
-          );
+          const nextOldestCursor = cursorFromServer || getMessageCursor(processed[0]);
+          setOldestLoadedAt(nextOldestCursor);
+          oldestLoadedAtRef.current = nextOldestCursor;
+          const nextHasMore = typeof messageData.hasMoreHistory === 'boolean'
+            ? messageData.hasMoreHistory
+            : processed.length >= INITIAL_HISTORY_BATCH_SIZE;
+          setHasMoreOlderMessages(nextHasMore);
+          hasMoreOlderMessagesRef.current = nextHasMore;
           // Mark history as loaded so the Virtuoso component renders
           // for the first time already at the bottom — no visible scroll.
           setHistoryLoaded(true);
@@ -3888,7 +3987,9 @@ function Chat() {
           setNewMessagesWhileScrolledUp(0);
           messageTailSnapshotRef.current = { length: 0, lastId: null };
           setHasMoreOlderMessages(false);
+          hasMoreOlderMessagesRef.current = false;
           setOldestLoadedAt(null);
+          oldestLoadedAtRef.current = null;
           setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
         } else if (messageData.type === 'update') {
           const normalizedUpdate = normalizeMessage(messageData.data);
@@ -4211,70 +4312,72 @@ function Chat() {
     return markDeletedReplyTargets(filtered, deletedIds);
   }, [markDeletedReplyTargets]);
 
+  const fetchAndPrependOlderMessages = useCallback(async (beforeCursor: string) => {
+    const before = encodeURIComponent(beforeCursor);
+    const res = await fetch(`${apiBase}/api/messages?before=${before}&limit=${HISTORY_PAGE_SIZE}`);
+    if (!res.ok) throw new Error('Failed to fetch older messages');
+
+    const payload = await res.json();
+    const rawBatch: any[] = Array.isArray(payload)
+      ? payload
+      : (Array.isArray(payload.messages) ? payload.messages : []);
+    const hasMore = Array.isArray(payload)
+      ? rawBatch.length >= HISTORY_PAGE_SIZE
+      : Boolean(payload.hasMore);
+
+    if (rawBatch.length === 0) {
+      setHasMoreOlderMessages(false);
+      hasMoreOlderMessagesRef.current = false;
+      return { prependedCount: 0, hasMore: false, nextCursor: oldestLoadedAtRef.current };
+    }
+
+    const normalizedBatch = rawBatch.map(normalizeMessage);
+    const filteredBatch = filterVisibleMessages(normalizedBatch);
+    const nextCursor = getMessageCursor(normalizedBatch[0]) || beforeCursor;
+
+    setOldestLoadedAt(nextCursor);
+    oldestLoadedAtRef.current = nextCursor;
+
+    const existingIdsSnapshot = new Set(messagesRef.current.map((m) => m.id));
+    const prependedCount = filteredBatch.reduce((count, m) => count + (existingIdsSnapshot.has(m.id) ? 0 : 1), 0);
+
+    setMessages((prev) => {
+      const prevIds = new Set(prev.map((m) => m.id));
+      const uniqueOlder = filteredBatch.filter((m) => !prevIds.has(m.id));
+      if (uniqueOlder.length === 0) return prev;
+
+      const combinedDeletedIds = new Set(
+        [...prev, ...uniqueOlder].filter((m) => m.isDeleted).map((m) => m.id)
+      );
+      const patchedOlder = markDeletedReplyTargets(uniqueOlder, combinedDeletedIds);
+      const patchedPrev = markDeletedReplyTargets(prev, combinedDeletedIds);
+      return [...patchedOlder, ...patchedPrev];
+    });
+
+    if (prependedCount > 0) {
+      setFirstItemIndex((prev) => prev - prependedCount);
+    }
+
+    setHasMoreOlderMessages(hasMore);
+    hasMoreOlderMessagesRef.current = hasMore;
+
+    return { prependedCount, hasMore, nextCursor };
+  }, [apiBase, filterVisibleMessages, getMessageCursor, markDeletedReplyTargets, normalizeMessage]);
+
   const loadOlderMessages = useCallback(async () => {
-    if (!historyLoaded || isLoadingOlderRef.current || !hasMoreOlderMessages || !oldestLoadedAt) return;
+    if (!historyLoaded || isLoadingOlderRef.current || !hasMoreOlderMessagesRef.current || !oldestLoadedAtRef.current) return;
 
     isLoadingOlderRef.current = true;
     setIsLoadingOlderMessages(true);
     try {
-      const before = encodeURIComponent(oldestLoadedAt);
-      const res = await fetch(`${apiBase}/api/messages?before=${before}&limit=${HISTORY_PAGE_SIZE}`);
-      if (!res.ok) throw new Error('Failed to fetch older messages');
-
-      const payload = await res.json();
-      const rawBatch: any[] = Array.isArray(payload)
-        ? payload
-        : (Array.isArray(payload.messages) ? payload.messages : []);
-      const hasMore = Array.isArray(payload)
-        ? rawBatch.length >= HISTORY_PAGE_SIZE
-        : Boolean(payload.hasMore);
-
-      if (rawBatch.length === 0) {
-        setHasMoreOlderMessages(false);
-        return;
-      }
-
-      const normalizedBatch = rawBatch.map(normalizeMessage);
-      const filteredBatch = filterVisibleMessages(normalizedBatch);
-      const oldestFromBatch = getMessageCursor(normalizedBatch[0]);
-      if (oldestFromBatch) setOldestLoadedAt(oldestFromBatch);
-
-      const existingIds = new Set(messagesRef.current.map(m => m.id));
-      const prependedCount = filteredBatch.filter(m => !existingIds.has(m.id)).length;
-
-      setMessages(prev => {
-        const prevIds = new Set(prev.map(m => m.id));
-        const uniqueOlder = filteredBatch.filter(m => !prevIds.has(m.id));
-        if (uniqueOlder.length === 0) return prev;
-
-        const combinedDeletedIds = new Set(
-          [...prev, ...uniqueOlder].filter(m => m.isDeleted).map(m => m.id)
-        );
-        const patchedOlder = markDeletedReplyTargets(uniqueOlder, combinedDeletedIds);
-        const patchedPrev = markDeletedReplyTargets(prev, combinedDeletedIds);
-        return [...patchedOlder, ...patchedPrev];
-      });
-
-      if (prependedCount > 0) {
-        setFirstItemIndex(prev => prev - prependedCount);
-      }
-      setHasMoreOlderMessages(hasMore);
+      await fetchAndPrependOlderMessages(oldestLoadedAtRef.current);
     } catch (err) {
       console.error('Failed to load older messages:', err);
     } finally {
       isLoadingOlderRef.current = false;
       setIsLoadingOlderMessages(false);
     }
-  }, [
-    apiBase,
-    filterVisibleMessages,
-    getMessageCursor,
-    hasMoreOlderMessages,
-    historyLoaded,
-    markDeletedReplyTargets,
-    normalizeMessage,
-    oldestLoadedAt,
-  ]);
+  }, [fetchAndPrependOlderMessages, historyLoaded]);
 
   const handleVideoFullscreenEnter = useCallback((messageId: string) => {
     fullscreenVideoMsgIdRef.current = messageId;
@@ -4797,6 +4900,26 @@ function Chat() {
     messageInputRef.current?.focus();
   }, [isSelectModeActive, lightboxUrl, isDeleteConfirmationVisible, isMobileView]);
 
+  const highlightMessage = useCallback((messageId: string) => {
+    const element = document.getElementById(`message-${messageId}`);
+    if (!element) return;
+    element.style.transition = 'background-color 0.5s ease';
+    element.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
+    setTimeout(() => {
+      element.style.backgroundColor = 'transparent';
+    }, 1500);
+  }, []);
+
+  const scrollToLoadedMessage = useCallback((messageId: string, behavior: 'auto' | 'smooth' = 'smooth') => {
+    if (!virtuosoRef.current) return false;
+    const msgIndex = messagesRef.current.findIndex((m) => m.id === messageId);
+    if (msgIndex === -1) return false;
+
+    virtuosoRef.current.scrollToIndex({ index: msgIndex, align: 'center', behavior });
+    setTimeout(() => highlightMessage(messageId), behavior === 'smooth' ? 300 : 90);
+    return true;
+  }, [highlightMessage]);
+
   const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string) => {
     if (sourceMessageId && sourceMessageId !== messageId) {
       const stack = quoteJumpReturnStackRef.current;
@@ -4810,22 +4933,46 @@ function Chat() {
       }
     }
 
-    const msgIndex = messages.findIndex(m => m.id === messageId);
-    if (msgIndex !== -1 && virtuosoRef.current) {
-      virtuosoRef.current.scrollToIndex({ index: msgIndex, align: 'center', behavior: 'smooth' });
-      // Highlight after a short delay to allow scroll to complete
-      setTimeout(() => {
-        const element = document.getElementById(`message-${messageId}`);
-        if (element) {
-          element.style.transition = 'background-color 0.5s ease';
-          element.style.backgroundColor = 'rgba(59, 130, 246, 0.2)';
-          setTimeout(() => {
-            element.style.backgroundColor = 'transparent';
-          }, 1500);
+    if (!messageId) return;
+    if (scrollToLoadedMessage(messageId, 'smooth')) return;
+    if (!historyLoaded) return;
+
+    void (async () => {
+      let cursor = oldestLoadedAtRef.current;
+      let hasMore = hasMoreOlderMessagesRef.current;
+      let fetchedPages = 0;
+
+      while (!messagesRef.current.some((m) => m.id === messageId) && hasMore && cursor && fetchedPages < MAX_QUOTE_AUTO_LOAD_PAGES) {
+        if (isLoadingOlderRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          cursor = oldestLoadedAtRef.current;
+          hasMore = hasMoreOlderMessagesRef.current;
+          continue;
         }
-      }, 300);
-    }
-  }, [messages]);
+
+        isLoadingOlderRef.current = true;
+        setIsLoadingOlderMessages(true);
+        try {
+          const result = await fetchAndPrependOlderMessages(cursor);
+          fetchedPages += 1;
+          cursor = result.nextCursor;
+          hasMore = result.hasMore;
+        } catch (error) {
+          console.error('Failed to auto-load quoted message history:', error);
+          break;
+        } finally {
+          isLoadingOlderRef.current = false;
+          setIsLoadingOlderMessages(false);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      requestAnimationFrame(() => {
+        scrollToLoadedMessage(messageId, 'smooth');
+      });
+    })();
+  }, [fetchAndPrependOlderMessages, historyLoaded, scrollToLoadedMessage]);
   
   const scrollToBottom = useCallback(() => {
     if (virtuosoRef.current) {
@@ -4852,10 +4999,8 @@ function Chat() {
     while (quoteJumpReturnStackRef.current.length > 0) {
       const candidate = quoteJumpReturnStackRef.current.pop() || null;
       if (!candidate) continue;
-      if (messagesRef.current.some((m) => m.id === candidate)) {
-        returnTargetId = candidate;
-        break;
-      }
+      returnTargetId = candidate;
+      break;
     }
 
     if (returnTargetId) {
