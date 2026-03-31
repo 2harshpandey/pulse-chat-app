@@ -527,7 +527,7 @@ const MobileReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
 `;
 const MessageBubble = styled.div<{ $sender: string; $messageType: string; $isUploading?: boolean; $uploadError?: boolean; }>`
   position: relative;
-  max-width: ${props => props.$messageType === 'text' ? '62%' : 'min(88vw, 360px)'};
+  max-width: ${props => props.$messageType === 'text' ? '62%' : 'min(82vw, 340px)'};
   padding: ${props => props.$messageType === 'text' ? '0.24rem 0.48rem 0.12rem' : '0.28rem 0.34rem'};
   border-radius: 0.82rem;
   background-color: ${props => props.$sender === 'me' ? '#3B82F6' : 'var(--bg-message-other)'};
@@ -539,6 +539,15 @@ const MessageBubble = styled.div<{ $sender: string; $messageType: string; $isUpl
   transition: opacity 0.3s ease, background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
   border: ${props => props.$uploadError ? '1px solid #ef4444' : (props.$sender === 'me' ? '1px solid rgba(255,255,255,0.12)' : '1px solid rgba(15,23,42,0.08)')};
   will-change: transform;
+  align-self: ${props => props.$sender === 'me' ? 'flex-end' : 'flex-start'};
+
+  @media (max-width: 768px) {
+    max-width: ${props => props.$messageType === 'text' ? '68%' : 'min(72vw, 252px)'};
+  }
+
+  @media (max-width: 420px) {
+    max-width: ${props => props.$messageType === 'text' ? '72%' : 'min(68vw, 232px)'};
+  }
 
   [data-theme='dark'] & {
     border-color: ${props => props.$uploadError ? '#ef4444' : (props.$sender === 'me' ? 'rgba(255,255,255,0.12)' : 'rgba(148,163,184,0.14)')};
@@ -819,11 +828,19 @@ const MediaContent = styled.div`
 const mediaFrameStyles = css`
   position: relative;
   display: block;
-  width: min(100%, 340px);
+  width: min(100%, 320px);
   max-width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 0.75rem;
   overflow: hidden;
+
+  @media (max-width: 768px) {
+    width: min(100%, 236px);
+  }
+
+  @media (max-width: 420px) {
+    width: min(100%, 212px);
+  }
 `;
 
 /* Absolutely-positioned download button that appears over images */
