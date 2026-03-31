@@ -22,6 +22,7 @@ const TempLink = require('./models/tempLink');
 const BlockedUser = require('./models/blockedUser');
 const LoginLockdown = require('./models/loginLockdown');
 const AuditLog = require('./models/auditLog');
+const ChatState = require('./models/chatState');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 // Helper: returns true for loopback, private, and link-local IPs to prevent SSRF.
@@ -138,6 +139,36 @@ const INITIAL_HISTORY_BATCH_SIZE = 80;
 const DEFAULT_HISTORY_PAGE_SIZE = 50;
 const MAX_HISTORY_PAGE_SIZE = 100;
 const MAX_HISTORY = 5000;
+const GLOBAL_CHAT_STATE_KEY = 'global';
+
+let frontendHiddenBefore = null;
+
+const getVisibleMessagesQuery = (beforeTimestamp) => {
+  const createdAt = {};
+
+  if (frontendHiddenBefore instanceof Date && !Number.isNaN(frontendHiddenBefore.getTime())) {
+    createdAt.$gt = frontendHiddenBefore;
+  }
+
+  if (beforeTimestamp instanceof Date && !Number.isNaN(beforeTimestamp.getTime())) {
+    createdAt.$lt = beforeTimestamp;
+  }
+
+  if (Object.keys(createdAt).length === 0) return {};
+  return { createdAt };
+};
+
+const loadGlobalChatState = async () => {
+  try {
+    const state = await ChatState.findOne({ key: GLOBAL_CHAT_STATE_KEY }).lean();
+    frontendHiddenBefore = state?.frontendHiddenBefore
+      ? new Date(state.frontendHiddenBefore)
+      : null;
+  } catch (error) {
+    frontendHiddenBefore = null;
+    logger.error('Failed to load global chat state:', { message: error.message, stack: error.stack });
+  }
+};
 
 // Track logged-in users (persists across disconnects until explicit logout/force-logout)
 // Map<userId, { userId, username, loginTime, ip, userAgent }>
@@ -610,6 +641,33 @@ app.delete('/api/messages/all', adminLimiter, adminSecretAuth, async (req, res) 
     } catch (error) {
         logger.error('Error clearing all messages:', { message: error.message, stack: error.stack });
         res.status(500).json({ error: 'Failed to clear all messages.' });
+    }
+});
+
+app.post('/api/messages/hide-all-frontend', adminLimiter, adminSecretAuth, async (req, res) => {
+    try {
+        const hiddenBefore = new Date();
+
+        await ChatState.findOneAndUpdate(
+          { key: GLOBAL_CHAT_STATE_KEY },
+          { $set: { frontendHiddenBefore: hiddenBefore } },
+          { upsert: true, setDefaultsOnInsert: true }
+        );
+
+        frontendHiddenBefore = hiddenBefore;
+
+        broadcast({ type: 'chat_hidden_for_everyone', hiddenBefore: hiddenBefore.toISOString() });
+
+        logger.info('All existing chats have been hidden from frontend for everyone (DB preserved).');
+        broadcastToAdmins('activity', 'All existing chats have been hidden from frontend for everyone.');
+
+        res.status(200).json({
+          message: 'All existing chats are now hidden from frontend for everyone.',
+          hiddenBefore: hiddenBefore.toISOString(),
+        });
+    } catch (error) {
+        logger.error('Error hiding chats from frontend:', { message: error.message, stack: error.stack });
+        res.status(500).json({ error: 'Failed to hide chats from frontend.' });
     }
 });
 
@@ -1146,13 +1204,15 @@ app.get('/api/messages', apiLimiter, async (req, res) => {
 
     const { before } = req.query; // 'before' is the createdAt timestamp of the oldest client-side message
 
-        const query = {};
+    let beforeDate = null;
     if (typeof before === 'string' && before.trim()) {
-      const beforeDate = new Date(before);
-      if (!Number.isNaN(beforeDate.getTime())) {
-        query.createdAt = { $lt: beforeDate };
+      const parsed = new Date(before);
+      if (!Number.isNaN(parsed.getTime())) {
+        beforeDate = parsed;
       }
-        }
+    }
+
+    const query = getVisibleMessagesQuery(beforeDate);
 
     const rows = await Message.find(query)
             .sort({ createdAt: -1 })
@@ -1325,7 +1385,7 @@ wss.on('connection', (ws, req) => {
         broadcastToAdmins('logged_in_users', Array.from(loggedInUsers.values()));
         broadcastOnlineUsers();
 
-        Message.find().sort({ createdAt: -1 }).limit(INITIAL_HISTORY_BATCH_SIZE + 1).lean()
+        Message.find(getVisibleMessagesQuery()).sort({ createdAt: -1 }).limit(INITIAL_HISTORY_BATCH_SIZE + 1).lean()
           .then(messagesDesc => {
             const hasMoreHistory = messagesDesc.length > INITIAL_HISTORY_BATCH_SIZE;
             const windowDesc = hasMoreHistory
@@ -1611,6 +1671,7 @@ wss.on('connection', (ws, req) => {
 // --- Start Server ---
 const startServer = async () => {
   await connectDB();
+  await loadGlobalChatState();
   
 server.listen(PORT, () => {
     logger.info(`Server is listening on port ${PORT}`);

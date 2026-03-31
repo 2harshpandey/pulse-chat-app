@@ -981,6 +981,12 @@ const ClearHistoryButton = styled(Button)`
   &:hover { background-color: #c53030; }
 `;
 
+const HideFrontendButton = styled(Button)`
+  background-color: #d97706;
+  flex-shrink: 0;
+  &:hover { background-color: #b45309; }
+`;
+
 // --- Responsive table: visible on desktop, hidden on mobile ---
 const ResponsiveTableWrapper = styled.div`
   width: 100%;
@@ -1261,6 +1267,9 @@ const Admin = () => {
           setHistoryLogs([]);
           setActivityLogs(prev => [`[${new Date().toLocaleTimeString()}] Chat history permanently cleared.`, ...prev]);
           break;
+        case 'chat_hidden_for_everyone':
+          setActivityLogs(prev => [`[${new Date().toLocaleTimeString()}] All existing chats were hidden from frontend for everyone.`, ...prev]);
+          break;
         case 'user_joined':
           setOnlineUsersList(prev => prev.some(u => u.userId === message.data.userId) ? prev : [...prev, message.data]);
           break;
@@ -1378,6 +1387,27 @@ const Admin = () => {
         if (res.ok) { alert("All chat history deleted."); setHistoryLogs([]); }
         else { const d = await res.json(); alert(`Error: ${d.error || 'Failed.'}`); }
       } catch { alert("A network error occurred."); }
+    }
+  };
+
+  const handleHideAllFromFrontend = async () => {
+    const enteredPassword = prompt("Re-enter admin password to confirm:");
+    if (enteredPassword !== passwordRef.current) { alert("Incorrect password."); return; }
+    if (window.confirm("ARE YOU SURE?\n\nThis will hide all existing chats from the frontend for everyone without deleting them from the database.")) {
+      try {
+        const res = await fetch(`${apiUrl}/api/messages/hide-all-frontend`, {
+          method: 'POST',
+          headers: { 'x-admin-secret': process.env.REACT_APP_ADMIN_SECRET || '' },
+        });
+        if (res.ok) {
+          alert("All existing chats are now hidden from frontend for everyone.");
+        } else {
+          const d = await res.json();
+          alert(`Error: ${d.error || 'Failed.'}`);
+        }
+      } catch {
+        alert("A network error occurred.");
+      }
     }
   };
 
@@ -1671,7 +1701,10 @@ const Admin = () => {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <h2 style={{ margin: 0 }}>Message Log</h2>
-              <ClearHistoryButton onClick={handlePermanentClear}>Clear Chat History</ClearHistoryButton>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <HideFrontendButton onClick={handleHideAllFromFrontend}>Hide Existing Chats (Frontend)</HideFrontendButton>
+                <ClearHistoryButton onClick={handlePermanentClear}>Clear Chat History</ClearHistoryButton>
+              </div>
             </div>
             <FilterContainer>
               <Input type="text" placeholder="Filter by Message ID" value={filterMessageId} onChange={(e) => setFilterMessageId(e.target.value)} />

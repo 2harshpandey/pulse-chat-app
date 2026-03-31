@@ -4051,6 +4051,17 @@ function Chat() {
           setOldestLoadedAt(null);
           oldestLoadedAtRef.current = null;
           setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
+        } else if (messageData.type === 'chat_hidden_for_everyone') {
+          // Admin hid all existing chats from frontend globally (records remain in DB).
+          // Clear currently loaded history so all clients immediately reflect this state.
+          setMessages([]);
+          setNewMessagesWhileScrolledUp(0);
+          messageTailSnapshotRef.current = { length: 0, lastId: null };
+          setHasMoreOlderMessages(false);
+          hasMoreOlderMessagesRef.current = false;
+          setOldestLoadedAt(null);
+          oldestLoadedAtRef.current = null;
+          setFirstItemIndex(INITIAL_FIRST_ITEM_INDEX);
         } else if (messageData.type === 'update') {
           const normalizedUpdate = normalizeMessage(messageData.data);
           setMessages(prev =>
