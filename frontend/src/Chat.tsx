@@ -124,6 +124,8 @@ const VIRTUOSO_OVERSCAN_MOBILE = 96;
 const VIRTUOSO_VIEWPORT_BY_DESKTOP = { top: 240, bottom: 160 };
 const VIRTUOSO_VIEWPORT_BY_MOBILE = { top: 180, bottom: 120 };
 const MAX_NEW_MESSAGE_INDICATOR_COUNT = 99;
+const MAX_LOADED_MEDIA_TRACKING = 800;
+const MAX_QUOTE_JUMP_STACK_DEPTH = 64;
 const LONG_PRESS_CANCEL_MOVE_PX = 8;
 const COMPOSER_TEXTAREA_ID = 'chat-composer-input';
 
@@ -174,6 +176,11 @@ const reactionPillPop = keyframes`
 const staggerFadeIn = keyframes`
   from { opacity: 0; transform: translateY(6px) scale(0.8); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+`;
+
+const mediaLoadPulse = keyframes`
+  0%, 100% { transform: scale(1); opacity: 0.92; }
+  50% { transform: scale(1.06); opacity: 1; }
 `;
 
 const emojiPopTap = keyframes`
@@ -899,6 +906,67 @@ const MediaImageWrapper = styled.div`
   }
   
   &:hover ${MediaDownloadOverlayBtn} { opacity: 1; }
+`;
+
+const MediaLoadGate = styled.button`
+  position: absolute;
+  inset: 0;
+  border: none;
+  border-radius: 0.75rem;
+  cursor: pointer;
+  color: #f8fafc;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 45%),
+    linear-gradient(160deg, rgba(15, 23, 42, 0.85), rgba(30, 41, 59, 0.78));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  transition: transform 0.18s ease, filter 0.18s ease;
+
+  &:hover {
+    transform: scale(1.015);
+    filter: brightness(1.08);
+  }
+
+  &:active {
+    transform: scale(0.985);
+  }
+`;
+
+const MediaLoadIcon = styled.span`
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.4);
+  animation: ${mediaLoadPulse} 1.75s ease-in-out infinite;
+
+  svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+
+  @media (max-width: 768px) {
+    width: 40px;
+    height: 40px;
+  }
+`;
+
+const MediaLoadLabel = styled.span`
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  opacity: 0.95;
 `;
 
 /* Small inline download button for videos and file cards */
@@ -2229,9 +2297,12 @@ const renderMessageContent = (
   onMediaPointerDown?: () => void,
   sender: 'me' | 'other' = 'other',
   onVideoFullscreenEnter?: () => void,
+  isMediaLoaded: boolean = true,
+  onRequestMediaLoad?: (messageId: string) => void,
 ) => {
   const isVideo = msg.type === 'video' || msg.url?.match(/\.(mp4|webm|mov)$/i);
   const isImage = msg.type === 'image' || msg.url?.match(/\.(jpeg|jpg|gif|png|svg)$/i);
+  const shouldGateMedia = Boolean(msg.url) && !msg.isUploading && !isMediaLoaded;
 
   const DownloadSvg = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -2241,12 +2312,39 @@ const renderMessageContent = (
     </svg>
   );
 
+  const handleLoadMediaClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (onRequestMediaLoad) {
+      onRequestMediaLoad(msg.id);
+    }
+  };
+
+  const handleLoadMediaPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onMediaPointerDown?.();
+  };
+
   if (isImage) {
     return (
       <MediaContent>
         <MediaImageWrapper>
-          <img src={sanitizeMediaUrl(msg.url)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(msg.url); if (u) openLightbox(u); }} onPointerDown={() => onMediaPointerDown?.()} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
-          {msg.url && (
+          {msg.url && shouldGateMedia ? (
+            <MediaLoadGate
+              type="button"
+              aria-label="Load image"
+              title="Load image"
+              onPointerDown={handleLoadMediaPointerDown}
+              onClick={handleLoadMediaClick}
+            >
+              <MediaLoadIcon>
+                <DownloadSvg />
+              </MediaLoadIcon>
+              <MediaLoadLabel>Tap to load photo</MediaLoadLabel>
+            </MediaLoadGate>
+          ) : msg.url ? (
+            <img src={sanitizeMediaUrl(msg.url)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(msg.url); if (u) openLightbox(u); }} onPointerDown={() => onMediaPointerDown?.()} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
+          ) : null}
+          {msg.url && !shouldGateMedia && (
             <MediaDownloadOverlayBtn
               title="Download"
               aria-label="Download image"
@@ -2264,10 +2362,29 @@ const renderMessageContent = (
   if (isVideo && msg.url) {
     return (
       <MediaContent>
-        <VideoPlayer src={msg.url} onPointerDown={onMediaPointerDown} onFullscreenEnter={onVideoFullscreenEnter} />
-        <InlineDownloadBtn aria-label="Download video" onClick={() => downloadFile(msg.url!, msg.originalName || 'video')}>
-          <DownloadSvg /> Download
-        </InlineDownloadBtn>
+        {shouldGateMedia ? (
+          <VideoPlayerWrapper>
+            <MediaLoadGate
+              type="button"
+              aria-label="Load video"
+              title="Load video"
+              onPointerDown={handleLoadMediaPointerDown}
+              onClick={handleLoadMediaClick}
+            >
+              <MediaLoadIcon>
+                <DownloadSvg />
+              </MediaLoadIcon>
+              <MediaLoadLabel>Tap to load video</MediaLoadLabel>
+            </MediaLoadGate>
+          </VideoPlayerWrapper>
+        ) : (
+          <>
+            <VideoPlayer src={msg.url} onPointerDown={onMediaPointerDown} onFullscreenEnter={onVideoFullscreenEnter} />
+            <InlineDownloadBtn aria-label="Download video" onClick={() => downloadFile(msg.url!, msg.originalName || 'video')}>
+              <DownloadSvg /> Download
+            </InlineDownloadBtn>
+          </>
+        )}
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
       </MediaContent>
     );
@@ -2406,9 +2523,11 @@ interface MessageItemProps {
   handleReact: (messageId: string, emoji: string) => void;
   openDeleteMenu: (messageId: string) => void;
   openLightbox: (url: string) => void;
+  isMediaLoaded: boolean;
+  onRequestMediaLoad: (messageId: string) => void;
   deleteForMe: (messageId: string) => void;
   deleteForEveryone: (messageId: string) => void;
-  scrollToMessage: (messageId: string) => void;
+  scrollToMessage: (messageId: string, sourceMessageId?: string) => void;
   isSelectModeActive: boolean;
   isSelected: boolean;
   handleToggleSelectMessage: (messageId: string) => void;
@@ -2440,6 +2559,8 @@ const MessageItem = React.memo(({
   handleReact,
   openDeleteMenu,
   openLightbox,
+  isMediaLoaded,
+  onRequestMediaLoad,
   deleteForMe,
   deleteForEveryone,
   scrollToMessage,
@@ -2796,7 +2917,7 @@ const MessageItem = React.memo(({
           style={{ marginBottom: (!isDeleted && msg.reactions && Object.keys(msg.reactions).length > 0) ? '18px' : undefined }}
         >
           {msg.replyingTo && (
-            <QuotedMessageContainer $sender={sender} onClick={() => { if (msg.replyingTo) scrollToMessage(msg.replyingTo.id); }}>
+            <QuotedMessageContainer $sender={sender} onClick={() => { if (msg.replyingTo) scrollToMessage(msg.replyingTo.id, msg.id); }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p>{msg.replyingTo.username}</p>
                 <span style={msg.replyingTo.isDeleted ? { fontStyle: 'italic', opacity: 0.7 } : undefined}>
@@ -2804,20 +2925,26 @@ const MessageItem = React.memo(({
                 </span>
               </div>
               {!msg.replyingTo.isDeleted && msg.replyingTo.url && (msg.replyingTo.type === 'image' || msg.replyingTo.type === 'video') && (
-                msg.replyingTo.type === 'video' ? (
-                  <video
-                    src={sanitizeMediaUrl(msg.replyingTo.url)}
-                    style={{ width: '48px', height: '48px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }}
-                    muted
-                    preload="metadata"
-                  />
-                ) : (
-                  <img
-                    src={sanitizeMediaUrl(msg.replyingTo.url)}
-                    alt="quoted media"
-                    style={{ width: '48px', height: '48px', borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }}
-                  />
-                )
+                <div
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '6px',
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(15, 23, 42, 0.28)',
+                    border: '1px solid rgba(148, 163, 184, 0.35)',
+                    color: 'rgba(241, 245, 249, 0.95)',
+                    fontSize: '0.66rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.02em',
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  {msg.replyingTo.type === 'video' ? 'Video' : 'Photo'}
+                </div>
               )}
             </QuotedMessageContainer>
           )}
@@ -2963,7 +3090,7 @@ const MessageItem = React.memo(({
               )}
               {/* DeleteMenu rendered as fixed portal — see block after </MessageRow> */}
               {msg.type === 'text' && !msg.url && msg.text && (() => { const _u = detectFirstUrl(msg.text); return _u ? <LinkPreview url={_u} sender={sender} /> : null; })()}
-              {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined, sender, handleVideoFullscreenEnterForMessage)}
+              {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined, sender, handleVideoFullscreenEnterForMessage, isMediaLoaded, onRequestMediaLoad)}
               <FooterContainer $sender={sender}>
                 <Timestamp $sender={sender}>{msg.edited && <span>(edited) </span>}{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
               </FooterContainer>
@@ -3213,6 +3340,7 @@ function Chat() {
 
   // --- STATE MANAGEMENT ---
   const [messages, setMessages] = useState<Message[]>([]);
+  const [loadedMediaMessageIds, setLoadedMediaMessageIds] = useState<string[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [activeDeleteMenu, setActiveDeleteMenu] = useState<string | null>(null);
@@ -3300,6 +3428,7 @@ function Chat() {
   // WebSocket auto-reconnect management refs
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectDelayRef = useRef<number>(2000); // starts at 2 s, doubles on each retry
+  const quoteJumpReturnStackRef = useRef<string[]>([]);
 
   // Base API URL — upgrade http:// → https:// when the page itself is on HTTPS.
   // Mobile networks (and many corporate proxies) enforce mixed-content policy strictly,
@@ -4596,7 +4725,19 @@ function Chat() {
     setIsScrollToBottomVisible(!atBottom);
     if (atBottom) {
       setNewMessagesWhileScrolledUp(0);
+      quoteJumpReturnStackRef.current = [];
     }
+  }, []);
+
+  const handleRequestMediaLoad = useCallback((messageId: string) => {
+    if (!messageId) return;
+    setLoadedMediaMessageIds((prev) => {
+      if (prev.includes(messageId)) return prev;
+      const next = [...prev, messageId];
+      return next.length > MAX_LOADED_MEDIA_TRACKING
+        ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
+        : next;
+    });
   }, []);
 
   // Clicking on empty space in the chat area focuses the input (WhatsApp-style).
@@ -4612,7 +4753,19 @@ function Chat() {
     messageInputRef.current?.focus();
   }, [isSelectModeActive, lightboxUrl, isDeleteConfirmationVisible, isMobileView]);
 
-  const scrollToMessage = useCallback((messageId: string) => {
+  const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string) => {
+    if (sourceMessageId && sourceMessageId !== messageId) {
+      const stack = quoteJumpReturnStackRef.current;
+      const lastSourceId = stack[stack.length - 1];
+      if (lastSourceId !== sourceMessageId) {
+        const nextStack = stack.length >= MAX_QUOTE_JUMP_STACK_DEPTH
+          ? stack.slice(stack.length - MAX_QUOTE_JUMP_STACK_DEPTH + 1)
+          : stack.slice();
+        nextStack.push(sourceMessageId);
+        quoteJumpReturnStackRef.current = nextStack;
+      }
+    }
+
     const msgIndex = messages.findIndex(m => m.id === messageId);
     if (msgIndex !== -1 && virtuosoRef.current) {
       virtuosoRef.current.scrollToIndex({ index: msgIndex, align: 'center', behavior: 'smooth' });
@@ -4630,15 +4783,15 @@ function Chat() {
     }
   }, [messages]);
   
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     if (virtuosoRef.current) {
       // Use an outrageously large index to guarantee anchoring to the end,
       // bypassing stale closure limits when called asynchronously.
       virtuosoRef.current.scrollToIndex({ index: 9999999, align: 'end', behavior: 'smooth' });
     }
-  };
+  }, []);
 
-  const forceScrollToBottomAsync = () => {
+  const forceScrollToBottomAsync = useCallback(() => {
     scrollToBottom();
     // Re-issue the scroll over the next 500ms to guarantee anchoring.
     // This perfectly tracks the mobile OS virtual keyboard retracting animation
@@ -4646,7 +4799,34 @@ function Chat() {
     setTimeout(scrollToBottom, 50);
     setTimeout(scrollToBottom, 200);
     setTimeout(scrollToBottom, 450);
-  };
+  }, [scrollToBottom]);
+
+  const handleScrollToBottomButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+
+    let returnTargetId: string | null = null;
+    while (quoteJumpReturnStackRef.current.length > 0) {
+      const candidate = quoteJumpReturnStackRef.current.pop() || null;
+      if (!candidate) continue;
+      if (messagesRef.current.some((m) => m.id === candidate)) {
+        returnTargetId = candidate;
+        break;
+      }
+    }
+
+    if (returnTargetId) {
+      scrollToMessage(returnTargetId);
+      return;
+    }
+
+    // On touch devices, blur the active element first so the keyboard
+    // doesn't open when we scroll to bottom.
+    if (isMobileView && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setNewMessagesWhileScrolledUp(0);
+    forceScrollToBottomAsync();
+  }, [forceScrollToBottomAsync, isMobileView, scrollToMessage]);
 
   const handleEmojiClick = (emojiData: EmojiClickData) => { setInputMessage(prev => prev + emojiData.emoji); };
   const handleOpenEmojiPicker = useCallback((rect: DOMRect) => {
@@ -4679,6 +4859,7 @@ function Chat() {
   if (!userContext?.profile) { return <Auth onAuthSuccess={userContext!.login} tempToken={tempToken || null} />; }
 
   const selectedMessageIds = useMemo(() => new Set(selectedMessages), [selectedMessages]);
+  const loadedMediaMessageSet = useMemo(() => new Set(loadedMediaMessageIds), [loadedMediaMessageIds]);
   const selectedMessage = messages.find(msg => msg.id === selectedMessages[0]);
   const canEditSelectedMessage = selectedMessages.length === 1 && selectedMessage && selectedMessage.userId === userIdRef.current && selectedMessage.text && (new Date().getTime() - new Date(selectedMessage.timestamp).getTime()) < 15 * 60 * 1000;
   const hasNewMessagesIndicator = newMessagesWhileScrolledUp > 0;
@@ -5125,6 +5306,8 @@ function Chat() {
                               handleReact={handleReact}
                               openDeleteMenu={handleOpenDeleteMenu}
                               openLightbox={openLightbox}
+                              isMediaLoaded={loadedMediaMessageSet.has(msg.id)}
+                              onRequestMediaLoad={handleRequestMediaLoad}
                               activeDeleteMenu={activeDeleteMenu}
                               deleteMenuRef={deleteMenuRef}
                               deleteForMe={deleteForMe}
@@ -5157,16 +5340,7 @@ function Chat() {
             </MessagesContainer>
             <ScrollToBottomButton
               $isVisible={isScrollToBottomVisible}
-              onClick={(e) => {
-                e.preventDefault();
-                // On touch devices, blur the active element first so the keyboard
-                // doesn't open when we scroll to bottom.
-                if (isMobileView && document.activeElement instanceof HTMLElement) {
-                  document.activeElement.blur();
-                }
-                setNewMessagesWhileScrolledUp(0);
-                forceScrollToBottomAsync();
-              }}
+              onClick={handleScrollToBottomButtonClick}
               onMouseDown={(e) => e.preventDefault()}
               onPointerDown={(e) => e.preventDefault()}
               onTouchStart={(e) => e.preventDefault()}
