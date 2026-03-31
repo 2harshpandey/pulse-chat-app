@@ -124,6 +124,7 @@ const VIRTUOSO_OVERSCAN_MOBILE = 96;
 const VIRTUOSO_VIEWPORT_BY_DESKTOP = { top: 240, bottom: 160 };
 const VIRTUOSO_VIEWPORT_BY_MOBILE = { top: 180, bottom: 120 };
 const MAX_NEW_MESSAGE_INDICATOR_COUNT = 99;
+const LONG_PRESS_CANCEL_MOVE_PX = 8;
 
 // --- STYLED COMPONENTS ---
 export const GlobalStyle = createGlobalStyle`
@@ -2483,6 +2484,17 @@ const MessageItem = React.memo(({
   // When true the gesture-tap handler skips selection so the lightbox/player
   // can open without also selecting the message.
   const mediaWasTapped = useRef(false);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const reactButtonRef = useRef<HTMLButtonElement>(null!);
+  const wasLongPressed = useRef(false);
+  const touchStartPointRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressTapSelectionRef = useRef(false);
+
+  const resetSwipePosition = useCallback((animate: boolean) => {
+    if (!messageRowRef.current) return;
+    messageRowRef.current.style.transform = 'translateX(0px)';
+    messageRowRef.current.style.transition = animate ? 'transform 0.2s ease-out' : 'none';
+  }, []);
 
   useEffect(() => {
     if (isEditing && editInputRef.current) {
@@ -2500,6 +2512,7 @@ const MessageItem = React.memo(({
     if (active && longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
+      suppressTapSelectionRef.current = true;
     }
 
     if (tap) {
@@ -2508,6 +2521,13 @@ const MessageItem = React.memo(({
       // The picker stays mounted while the full emoji panel is open, so
       // target.closest reliably catches taps on any of its buttons.
       if (target.closest('.mobile-reaction-picker')) {
+        return;
+      }
+
+      // Ignore synthetic tap events that are actually part of a scroll gesture.
+      if (suppressTapSelectionRef.current) {
+        suppressTapSelectionRef.current = false;
+        mediaWasTapped.current = false;
         return;
       }
       
@@ -2539,28 +2559,43 @@ const MessageItem = React.memo(({
     if (last && !tap) {
       mediaWasTapped.current = false;
       wasLongPressed.current = false;
+      suppressTapSelectionRef.current = false;
     }
 
-    // Only perform swipe-to-reply logic for horizontal swipes, not vertical scrolls.
-    if (isMobileView && !isSelectModeActive && !isDeleted && messageRowRef.current && Math.abs(mx) > Math.abs(my)) {
-      if (last) {
-        // If the drag was far enough, trigger the reply action.
-        if (mx > 70) {
-          handleSetReply(msg);
-        }
-        // Animate the message back to its original position.
-        messageRowRef.current.style.transform = 'translateX(0px)';
-        messageRowRef.current.style.transition = 'transform 0.2s ease-out';
-      } else {
-        // During the drag, update the position.
-        let newX = active ? mx : 0;
-        if (newX < 0) newX = 0; // Prevent dragging left.
-        if (newX > 80) newX = 80; // Cap the drag distance to 80px.
+    // Always restore the row position at the end of any gesture. This prevents
+    // partially shifted bubbles when a horizontal swipe drifts vertically.
+    if (last) {
+      resetSwipePosition(true);
+    }
 
-        messageRowRef.current.style.transform = `translateX(${newX}px)`;
-        messageRowRef.current.style.transition = 'none';
+    if (!isMobileView || isSelectModeActive || isDeleted || !messageRowRef.current) {
+      return;
+    }
+
+    const isHorizontalGesture = Math.abs(mx) > Math.abs(my);
+
+    if (last) {
+      // If the drag ended as a rightward horizontal swipe, trigger reply.
+      if (isHorizontalGesture && mx > 70) {
+        handleSetReply(msg);
       }
+      return;
     }
+
+    if (!active) {
+      return;
+    }
+
+    // While scrolling vertically (or dragging left), keep the row anchored.
+    if (!isHorizontalGesture || mx <= 0) {
+      resetSwipePosition(false);
+      return;
+    }
+
+    // During a valid horizontal drag, update position with sane bounds.
+    const newX = Math.min(Math.max(mx, 0), 80);
+    messageRowRef.current.style.transform = `translateX(${newX}px)`;
+    messageRowRef.current.style.transition = 'none';
   }, { 
     filterTaps: true, 
     eventOptions: { passive: true }, 
@@ -2577,9 +2612,6 @@ const MessageItem = React.memo(({
     }
     return null;
   }, [msg.reactions, currentUserId]);
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const reactButtonRef = useRef<HTMLButtonElement>(null!);
-  const wasLongPressed = useRef(false);
 
   // Reset gesture refs when Virtuoso recycles this component for a different message
   const prevMsgIdRef = useRef(msg.id);
@@ -2588,12 +2620,15 @@ const MessageItem = React.memo(({
       prevMsgIdRef.current = msg.id;
       wasLongPressed.current = false;
       mediaWasTapped.current = false;
+      suppressTapSelectionRef.current = false;
+      touchStartPointRef.current = null;
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
       }
+      resetSwipePosition(false);
     }
-  }, [msg.id]);
+  }, [msg.id, resetSwipePosition]);
 
   // Reset wasLongPressed only when select mode is DEACTIVATED.
   // We must NOT reset it when select mode is activated — the long-press
@@ -2603,6 +2638,7 @@ const MessageItem = React.memo(({
   useEffect(() => {
     if (!isSelectModeActive) {
       wasLongPressed.current = false;
+      suppressTapSelectionRef.current = false;
     }
   }, [isSelectModeActive]);
 
@@ -2617,18 +2653,56 @@ const MessageItem = React.memo(({
   }, [onVideoFullscreenEnter, msg.id]);
 
   const handleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
+    if (!isMobileView || !('touches' in e)) {
+      return;
+    }
+
     // Don't start a long-press timer when the touch/click lands on the
     // MobileReactionPicker — otherwise the 500 ms timer fires, toggles
     // selection (deselecting the message), and unmounts the picker before
     // the user's onClick can fire on the emoji button.
     const target = e.target as HTMLElement;
-    if (target.closest('.mobile-reaction-picker')) return;
+    if (target.closest('.mobile-reaction-picker') || target.closest('button, a, input, textarea, [contenteditable="true"]')) {
+      return;
+    }
+
+    if (e.touches.length !== 1) {
+      return;
+    }
+
+    const touch = e.touches[0];
+    touchStartPointRef.current = { x: touch.clientX, y: touch.clientY };
+    suppressTapSelectionRef.current = false;
+
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
     longPressTimerRef.current = setTimeout(() => {
-      if (isMobileView) {
+      if (!suppressTapSelectionRef.current) {
         handleToggleSelectMessage(msg.id);
         wasLongPressed.current = true;
       }
     }, 500);
+  };
+
+  const handleLongPressMove = (e: React.TouchEvent) => {
+    if (!touchStartPointRef.current || e.touches.length === 0) {
+      return;
+    }
+
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartPointRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPointRef.current.y);
+
+    if (dx > LONG_PRESS_CANCEL_MOVE_PX || dy > LONG_PRESS_CANCEL_MOVE_PX) {
+      suppressTapSelectionRef.current = true;
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
   };
 
   const handleLongPressEnd = () => {
@@ -2636,6 +2710,17 @@ const MessageItem = React.memo(({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    touchStartPointRef.current = null;
+  };
+
+  const handleLongPressCancel = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    touchStartPointRef.current = null;
+    suppressTapSelectionRef.current = true;
+    resetSwipePosition(true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2673,7 +2758,9 @@ const MessageItem = React.memo(({
       onMouseDown={handleLongPressStart}
       onMouseUp={handleLongPressEnd}
       onTouchStart={handleLongPressStart}
+      onTouchMove={handleLongPressMove}
       onTouchEnd={handleLongPressEnd}
+      onTouchCancel={handleLongPressCancel}
     >
       {isSelectModeActive && (!isMobileView || selectedMessages.length > 1) && (
         <SelectCheckboxContainer
