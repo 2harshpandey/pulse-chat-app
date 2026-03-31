@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import styled, { createGlobalStyle, keyframes, css } from 'styled-components';
-import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
+import EmojiPicker, { EmojiClickData, EmojiStyle, Theme } from 'emoji-picker-react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useDrag } from '@use-gesture/react';
 import { UserContext, UserProfile } from './UserContext';
@@ -4712,7 +4712,13 @@ function Chat() {
             return { position: 'absolute' as const, top: `${top}px`, left: `${left}px`, zIndex: 21 };
           })()}
         >
-          <EmojiPicker onEmojiClick={handleEmojiClick} autoFocusSearch={false} theme={isDark ? Theme.DARK : Theme.LIGHT} lazyLoadEmojis={true} />
+          <EmojiPicker
+            onEmojiClick={handleEmojiClick}
+            autoFocusSearch={false}
+            theme={isDark ? Theme.DARK : Theme.LIGHT}
+            emojiStyle={EmojiStyle.NATIVE}
+            lazyLoadEmojis={false}
+          />
         </div>
       )}
       {fullEmojiPickerPosition && (
@@ -4737,9 +4743,10 @@ function Chat() {
                 }
               }}
               theme={isDark ? Theme.DARK : Theme.LIGHT}
+              emojiStyle={EmojiStyle.NATIVE}
               autoFocusSearch={false}
               width="100%"
-              lazyLoadEmojis={true}
+              lazyLoadEmojis={false}
             />
           </MobileEmojiPanel>
         ) : (
@@ -4764,8 +4771,9 @@ function Chat() {
                 }
               }}
               theme={isDark ? Theme.DARK : Theme.LIGHT}
+              emojiStyle={EmojiStyle.NATIVE}
               autoFocusSearch={false}
-              lazyLoadEmojis={true}
+              lazyLoadEmojis={false}
             />
           </EmojiPickerWrapper>
         )}
@@ -5112,9 +5120,10 @@ function Chat() {
                     onEmojiClick={handleEmojiClick}
                     autoFocusSearch={false}
                     theme={isDark ? Theme.DARK : Theme.LIGHT}
+                    emojiStyle={EmojiStyle.NATIVE}
                     width="100%"
                     height="42vh"
-                    lazyLoadEmojis={true}
+                    lazyLoadEmojis={false}
                   />
                 </div>
               )}
