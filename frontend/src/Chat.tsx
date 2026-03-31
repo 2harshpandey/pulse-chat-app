@@ -818,15 +818,6 @@ const MediaContent = styled.div`
   user-select: none;
   animation: ${fadeInScale} 0.3s ease-out forwards;
   p { margin-bottom: 0.5rem; }
-  img {
-    max-width: 100%;
-    border-radius: 0.75rem;
-    cursor: pointer;
-    display: block;
-    @media (min-width: 769px) {
-      max-width: 360px;
-    }
-  }
   p + div, p + img, p + video { margin-top: 0.5rem; }
 `;
 
@@ -855,13 +846,26 @@ const MediaDownloadOverlayBtn = styled.button`
   @media (max-width: 768px) { opacity: 1; width: 28px; height: 28px; }
 `;
 
-/* Wraps an image so the download overlay button can be positioned within it */
+/* Uniform frame wrapper for media objects to prevent scroll glitches during lazy load */
 const MediaImageWrapper = styled.div`
   position: relative;
   display: block;
-  width: fit-content;
-  max-width: 100%;
-  @media (min-width: 769px) { max-width: 360px; }
+  width: 260px;
+  height: 260px;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background-color: var(--bg-hover);
+  @media (min-width: 769px) { width: 340px; height: 340px; }
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    cursor: pointer;
+    border-radius: 0.75rem;
+  }
+  
   &:hover ${MediaDownloadOverlayBtn} { opacity: 1; }
 `;
 
@@ -1953,16 +1957,22 @@ const ConfirmationContent = styled.div`
 const VideoPlayerWrapper = styled.div`
   position: relative;
   cursor: pointer;
-  width: 100%;
-  max-height: 60vh;
+  width: 260px;
+  height: 260px;
   border-radius: 0.75rem;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #000;
-  @media (min-width: 769px) {
-    max-width: 360px;
+  @media (min-width: 769px) { width: 340px; height: 340px; }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: 0.75rem;
   }
 `;
 
