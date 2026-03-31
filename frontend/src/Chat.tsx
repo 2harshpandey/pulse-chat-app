@@ -342,7 +342,7 @@ const DragDropSubtitle = styled.p`
 const AppContainer = styled.div`
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: var(--app-height, 100dvh);
 `;
 const Header = styled.header`
   background-color: var(--bg-header);
@@ -3190,6 +3190,27 @@ function Chat() {
       if (timer) clearTimeout(timer);
     };
   }, [showGifPicker, gifSearchTerm]);
+
+  // ── Mobile Visual Viewport Tracker (Keyboard Fix) ───────────────────
+  // Modern mobile browsers (especially Android Chrome) dynamically change the visual viewport
+  // when the software keyboard shifts between Letters <-> Emojis without scaling layout bounds.
+  // This explicitly guarantees our root wrapper mathematically fits within the visible space to avoid obscuring the chat box.
+  useEffect(() => {
+    const handleViewportResize = () => {
+      // Use visualViewport if available (tracks exact keyboard intersections), fallback to innerHeight
+      const activeHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty('--app-height', `${activeHeight}px`);
+    };
+
+    handleViewportResize();
+    window.visualViewport?.addEventListener('resize', handleViewportResize);
+    window.addEventListener('resize', handleViewportResize);
+    
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleViewportResize);
+      window.removeEventListener('resize', handleViewportResize);
+    };
+  }, []);
 
   // Mobile Back Button Handler
   useEffect(() => {
