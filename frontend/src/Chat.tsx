@@ -3902,12 +3902,7 @@ function Chat() {
   const plusButtonRef = useRef<HTMLButtonElement>(null!);
   // Refs to track video fullscreen context so we can restore the exact
   // pre-fullscreen scroll position when the user exits fullscreen.
-  const fullscreenVideoMsgIdRef = useRef<string | null>(null);
-  const fullscreenVideoScrollSnapshotRef = useRef<{
-    messageId: string;
-    scrollTop: number;
-    messageTopOffset: number | null;
-  } | null>(null);
+
 
   // --- REFS ---
   const ws = useRef<WebSocket | null>(null);
@@ -4590,98 +4585,27 @@ function Chat() {
     return (chatContainerRef.current.querySelector('[data-virtuoso-scroller]') as HTMLElement | null) || chatContainerRef.current;
   }, []);
 
-  const restoreFullscreenVideoScroll = useCallback(() => {
-    const snapshot = fullscreenVideoScrollSnapshotRef.current;
-    if (!snapshot) return false;
-
-    const scroller = getChatScrollerElement();
-    if (!scroller) return false;
-
-    const messageElement = document.getElementById(`message-${snapshot.messageId}`);
-    const scrollerRect = scroller.getBoundingClientRect();
-    const currentScrollTop = scroller.scrollTop;
-    let targetTop = snapshot.scrollTop;
-
-    if (snapshot.messageTopOffset !== null && messageElement) {
-      const msgRect = messageElement.getBoundingClientRect();
-      const currentTopOffset = msgRect.top - scrollerRect.top;
-      targetTop = currentScrollTop + (currentTopOffset - snapshot.messageTopOffset);
-
-      // Ensure the message stays fully visible above the footer after restore.
-      // Compute with predicted offsets so we need only one scroll write.
-      const visibleTop = FULLSCREEN_RESTORE_VISIBILITY_MARGIN;
-      const visibleBottom = scrollerRect.height - FULLSCREEN_RESTORE_VISIBILITY_MARGIN;
-      const predictedTopOffset = currentTopOffset - (targetTop - currentScrollTop);
-      const predictedBottomOffset = predictedTopOffset + msgRect.height;
-
-      if (predictedBottomOffset > visibleBottom) {
-        targetTop += predictedBottomOffset - visibleBottom;
-      } else if (predictedTopOffset < visibleTop) {
-        targetTop += predictedTopOffset - visibleTop;
-      }
-    }
-
-    const maxScrollTop = Math.max(scroller.scrollHeight - scroller.clientHeight, 0);
-    const boundedTop = Math.min(Math.max(targetTop, 0), maxScrollTop);
-    if (Math.abs(boundedTop - currentScrollTop) <= 0.5) return true;
-
-    scroller.scrollTo({ top: boundedTop, behavior: 'auto' });
-
-    return true;
-  }, [getChatScrollerElement]);
-
   // ── Video fullscreen exit → restore scroll position ─────────────────
   useEffect(() => {
-    const pendingFrames: number[] = [];
-    const pendingTimers: ReturnType<typeof setTimeout>[] = [];
-
-    const clearPendingRestores = () => {
-      pendingFrames.forEach(cancelAnimationFrame);
-      pendingFrames.length = 0;
-      pendingTimers.forEach(clearTimeout);
-      pendingTimers.length = 0;
-    };
-
     const handleFullscreenChange = () => {
       if (document.fullscreenElement || (document as any).webkitFullscreenElement) return;
-
-      const snapshot = fullscreenVideoScrollSnapshotRef.current;
-      if (!snapshot && !fullscreenVideoMsgIdRef.current) return;
-
-      clearPendingRestores();
 
       // Prevent browser focus restoration from nudging the chat viewport.
       if (document.activeElement instanceof HTMLVideoElement) {
         document.activeElement.blur();
       }
-
-      // Use a double-rAF so layout/viewport settles first, then perform one
-      // restore + one quiet fallback check. This avoids the visible "fighting"
-      // between footer and message from repeated rapid scroll writes.
-      const frameA = requestAnimationFrame(() => {
-        const frameB = requestAnimationFrame(() => {
-          restoreFullscreenVideoScroll();
-
-          const fallbackTimerId = setTimeout(() => {
-            restoreFullscreenVideoScroll();
-            fullscreenVideoMsgIdRef.current = null;
-            fullscreenVideoScrollSnapshotRef.current = null;
-          }, FULLSCREEN_RESTORE_FALLBACK_DELAY_MS);
-          pendingTimers.push(fallbackTimerId);
-        });
-        pendingFrames.push(frameB);
-      });
-      pendingFrames.push(frameA);
+      
+      // Let Virtuoso's ResizeObserver natively maintain scroll position.
+      // Removed custom double-rAF manual scroll logic which fought Virtuoso.
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     return () => {
-      clearPendingRestores();
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
-  }, [restoreFullscreenVideoScroll]);
+  }, []);
 
   // ── Drag-and-drop file upload ──────────────────────────────────────
   useEffect(() => {
@@ -4918,32 +4842,9 @@ function Chat() {
   }, [fetchAndPrependOlderMessages, historyLoaded]);
 
   const handleVideoFullscreenEnter = useCallback((messageId: string) => {
-    fullscreenVideoMsgIdRef.current = messageId;
-
-    const scroller = getChatScrollerElement();
-    if (!scroller) {
-      fullscreenVideoScrollSnapshotRef.current = {
-        messageId,
-        scrollTop: 0,
-        messageTopOffset: null,
-      };
-      return;
-    }
-
-    const messageElement = document.getElementById(`message-${messageId}`);
-    let messageTopOffset: number | null = null;
-    if (messageElement) {
-      const scrollerRect = scroller.getBoundingClientRect();
-      const msgRect = messageElement.getBoundingClientRect();
-      messageTopOffset = msgRect.top - scrollerRect.top;
-    }
-
-    fullscreenVideoScrollSnapshotRef.current = {
-      messageId,
-      scrollTop: scroller.scrollTop,
-      messageTopOffset,
-    };
-  }, [getChatScrollerElement]);
+    // Intentionally blank. Virtuoso's internal ResizeObserver naturally maintains
+    // scroll position anchoring. Manual tracking causes tug-of-war on exit.
+  }, []);
 
   const resetInput = () => {
     setInputMessage('');
@@ -5974,7 +5875,7 @@ function Chat() {
   // --- PRE-RENDER HOOKS (must be before any early return to satisfy Rules of Hooks) ---
   const selectedMessageIds = useMemo(() => new Set(selectedMessages), [selectedMessages]);
   const loadedMediaMessageSet = useMemo(() => new Set(loadedMediaMessageIds), [loadedMediaMessageIds]);
-  const virtuosoFollowOutput = useCallback((isAtBottom: boolean): 'smooth' | false => isAtBottom ? 'smooth' : false, []);
+  const virtuosoFollowOutput = useCallback((isAtBottom: boolean): 'smooth' | false | 'auto' => isAtBottom ? 'auto' : false, []);
 
   // --- RENDER ---
   if (!userContext?.profile) { return <Auth onAuthSuccess={userContext!.login} tempToken={tempToken || null} />; }
