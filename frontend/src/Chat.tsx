@@ -275,6 +275,7 @@ const MAX_QUOTE_JUMP_STACK_DEPTH = 64;
 const MAX_QUOTE_AUTO_LOAD_PAGES = 120;
 const QUOTE_JUMP_TARGET_TOP_RATIO = 0.42;
 const FULLSCREEN_RESTORE_VISIBILITY_MARGIN = 12;
+const FULLSCREEN_RESTORE_FALLBACK_DELAY_MS = 180;
 const PHOTO_LIGHTBOX_MIN_SCALE = 1;
 const PHOTO_LIGHTBOX_MAX_SCALE = 5;
 const PHOTO_LIGHTBOX_STEP = 0.28;
@@ -4596,50 +4597,50 @@ function Chat() {
     const scroller = getChatScrollerElement();
     if (!scroller) return false;
 
+    const messageElement = document.getElementById(`message-${snapshot.messageId}`);
+    const scrollerRect = scroller.getBoundingClientRect();
+    const currentScrollTop = scroller.scrollTop;
     let targetTop = snapshot.scrollTop;
 
-    if (snapshot.messageTopOffset !== null) {
-      const messageElement = document.getElementById(`message-${snapshot.messageId}`);
-      if (messageElement) {
-        const scrollerRect = scroller.getBoundingClientRect();
-        const msgRect = messageElement.getBoundingClientRect();
-        const currentTopOffset = msgRect.top - scrollerRect.top;
-        targetTop = scroller.scrollTop + (currentTopOffset - snapshot.messageTopOffset);
+    if (snapshot.messageTopOffset !== null && messageElement) {
+      const msgRect = messageElement.getBoundingClientRect();
+      const currentTopOffset = msgRect.top - scrollerRect.top;
+      targetTop = currentScrollTop + (currentTopOffset - snapshot.messageTopOffset);
+
+      // Ensure the message stays fully visible above the footer after restore.
+      // Compute with predicted offsets so we need only one scroll write.
+      const visibleTop = FULLSCREEN_RESTORE_VISIBILITY_MARGIN;
+      const visibleBottom = scrollerRect.height - FULLSCREEN_RESTORE_VISIBILITY_MARGIN;
+      const predictedTopOffset = currentTopOffset - (targetTop - currentScrollTop);
+      const predictedBottomOffset = predictedTopOffset + msgRect.height;
+
+      if (predictedBottomOffset > visibleBottom) {
+        targetTop += predictedBottomOffset - visibleBottom;
+      } else if (predictedTopOffset < visibleTop) {
+        targetTop += predictedTopOffset - visibleTop;
       }
     }
 
     const maxScrollTop = Math.max(scroller.scrollHeight - scroller.clientHeight, 0);
     const boundedTop = Math.min(Math.max(targetTop, 0), maxScrollTop);
+    if (Math.abs(boundedTop - currentScrollTop) <= 0.5) return true;
+
     scroller.scrollTo({ top: boundedTop, behavior: 'auto' });
-
-    // Guard against post-fullscreen viewport shifts that can leave the last
-    // video partially hidden under the footer area.
-    const messageElement = document.getElementById(`message-${snapshot.messageId}`);
-    if (messageElement) {
-      const scrollerRect = scroller.getBoundingClientRect();
-      const msgRect = messageElement.getBoundingClientRect();
-      const visibleTop = scrollerRect.top + FULLSCREEN_RESTORE_VISIBILITY_MARGIN;
-      const visibleBottom = scrollerRect.bottom - FULLSCREEN_RESTORE_VISIBILITY_MARGIN;
-
-      let correctedTop = boundedTop;
-      if (msgRect.bottom > visibleBottom) {
-        correctedTop += msgRect.bottom - visibleBottom;
-      } else if (msgRect.top < visibleTop) {
-        correctedTop += msgRect.top - visibleTop;
-      }
-
-      const boundedCorrectedTop = Math.min(Math.max(correctedTop, 0), maxScrollTop);
-      if (Math.abs(boundedCorrectedTop - boundedTop) > 0.5) {
-        scroller.scrollTo({ top: boundedCorrectedTop, behavior: 'auto' });
-      }
-    }
 
     return true;
   }, [getChatScrollerElement]);
 
   // ── Video fullscreen exit → restore scroll position ─────────────────
   useEffect(() => {
+    const pendingFrames: number[] = [];
     const pendingTimers: ReturnType<typeof setTimeout>[] = [];
+
+    const clearPendingRestores = () => {
+      pendingFrames.forEach(cancelAnimationFrame);
+      pendingFrames.length = 0;
+      pendingTimers.forEach(clearTimeout);
+      pendingTimers.length = 0;
+    };
 
     const handleFullscreenChange = () => {
       if (document.fullscreenElement || (document as any).webkitFullscreenElement) return;
@@ -4647,31 +4648,36 @@ function Chat() {
       const snapshot = fullscreenVideoScrollSnapshotRef.current;
       if (!snapshot && !fullscreenVideoMsgIdRef.current) return;
 
+      clearPendingRestores();
+
       // Prevent browser focus restoration from nudging the chat viewport.
       if (document.activeElement instanceof HTMLVideoElement) {
         document.activeElement.blur();
       }
 
-      // Fullscreen exit can trigger viewport/layout settling over a few frames.
-      // Re-apply restore a few times so final position remains exact.
-      [0, 70, 180, 340, 560].forEach((delay) => {
-        const timerId = setTimeout(() => {
+      // Use a double-rAF so layout/viewport settles first, then perform one
+      // restore + one quiet fallback check. This avoids the visible "fighting"
+      // between footer and message from repeated rapid scroll writes.
+      const frameA = requestAnimationFrame(() => {
+        const frameB = requestAnimationFrame(() => {
           restoreFullscreenVideoScroll();
-        }, delay);
-        pendingTimers.push(timerId);
-      });
 
-      const cleanupTimerId = setTimeout(() => {
-        fullscreenVideoMsgIdRef.current = null;
-        fullscreenVideoScrollSnapshotRef.current = null;
-      }, 760);
-      pendingTimers.push(cleanupTimerId);
+          const fallbackTimerId = setTimeout(() => {
+            restoreFullscreenVideoScroll();
+            fullscreenVideoMsgIdRef.current = null;
+            fullscreenVideoScrollSnapshotRef.current = null;
+          }, FULLSCREEN_RESTORE_FALLBACK_DELAY_MS);
+          pendingTimers.push(fallbackTimerId);
+        });
+        pendingFrames.push(frameB);
+      });
+      pendingFrames.push(frameA);
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
     return () => {
-      pendingTimers.forEach(clearTimeout);
+      clearPendingRestores();
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
