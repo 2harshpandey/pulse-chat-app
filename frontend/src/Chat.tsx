@@ -309,6 +309,17 @@ const fadeInScale = keyframes`
   to { opacity: 1; transform: scale(1); }
 `;
 
+const lightboxControlReveal = keyframes`
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+`;
+
 /* ═══ Premium Reaction Animations ═══ */
 const reactionBounceIn = keyframes`
   0%   { transform: scale(0); opacity: 0; }
@@ -1416,6 +1427,54 @@ const Lightbox = styled.div`
   z-index: 1000;
   padding: 16px;
   animation: ${fadeInScale} 0.22s ease-out forwards;
+`;
+const LightboxCloseButton = styled.button`
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  left: calc(env(safe-area-inset-left, 0px) + 14px);
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 999px;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.76));
+  color: #f8fafc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1002;
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.5), 0 0 0 1px rgba(148, 163, 184, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: ${lightboxControlReveal} 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+
+  &:hover {
+    transform: translateY(-1px) scale(1.04);
+    box-shadow: 0 14px 28px rgba(2, 6, 23, 0.58), 0 0 0 1px rgba(186, 230, 253, 0.34);
+    background: linear-gradient(145deg, rgba(30, 41, 59, 0.95), rgba(51, 65, 85, 0.82));
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+
+  svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  @media (max-width: 768px) {
+    width: 40px;
+    height: 40px;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+  }
 `;
 const LightboxFrame = styled.div`
   position: relative;
@@ -5358,6 +5417,10 @@ function Chat() {
     setLightboxUrl(url);
   }, []);
 
+  const closeLightbox = useCallback(() => {
+    setLightboxUrl(null);
+  }, []);
+
   const handleInitiateDelete = () => {
     const selectedMessageObjects = messages.filter(msg => selectedMessages.includes(msg.id));
     const allMessagesAreMine = selectedMessageObjects.every(msg => msg.userId === userIdRef.current);
@@ -5639,7 +5702,7 @@ function Chat() {
     applyHighlight(0);
   }, []);
 
-  const scrollToLoadedMessage = useCallback((messageId: string, behavior: 'auto' | 'smooth' = 'auto') => {
+  const scrollToLoadedMessage = useCallback((messageId: string, behavior: 'auto' | 'smooth' = 'smooth') => {
     if (!virtuosoRef.current) return false;
     const msgIndex = messagesRef.current.findIndex((m) => m.id === messageId);
     if (msgIndex === -1) return false;
@@ -5649,10 +5712,18 @@ function Chat() {
       virtuosoRef.current?.scrollToIndex({ index: msgIndex, align, behavior: nextBehavior });
     };
 
-    scrollToTarget(behavior);
+    if (behavior === 'smooth') {
+      scrollToTarget('smooth');
+      // Preserve a smooth slide, then snap once for pixel-perfect final placement.
+      window.setTimeout(() => scrollToTarget('auto'), 360);
+      window.setTimeout(() => highlightMessage(messageId), 420);
+      return true;
+    }
+
+    scrollToTarget('auto');
     requestAnimationFrame(() => scrollToTarget('auto'));
     window.setTimeout(() => scrollToTarget('auto'), 110);
-    window.setTimeout(() => highlightMessage(messageId), behavior === 'smooth' ? 360 : 120);
+    window.setTimeout(() => highlightMessage(messageId), 120);
     return true;
   }, [highlightMessage]);
 
@@ -5670,7 +5741,7 @@ function Chat() {
     }
 
     if (!messageId) return;
-    if (scrollToLoadedMessage(messageId, 'auto')) return;
+    if (scrollToLoadedMessage(messageId, 'smooth')) return;
     if (!historyLoaded) return;
 
     void (async () => {
@@ -5705,7 +5776,7 @@ function Chat() {
       }
 
       requestAnimationFrame(() => {
-        scrollToLoadedMessage(messageId, 'auto');
+        scrollToLoadedMessage(messageId, 'smooth');
       });
     })();
   }, [fetchAndPrependOlderMessages, historyLoaded, scrollToLoadedMessage]);
@@ -6579,7 +6650,22 @@ function Chat() {
       )}
 
       {lightboxUrl && (
-        <Lightbox onClick={() => setLightboxUrl(null)}>
+        <Lightbox onClick={closeLightbox}>
+          <LightboxCloseButton
+            type="button"
+            aria-label="Close photo viewer"
+            title="Close"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              closeLightbox();
+            }}
+          >
+            <svg viewBox="0 0 24 24">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          </LightboxCloseButton>
           <LightboxFrame
             ref={lightboxFrameRef}
             onClick={(e) => e.stopPropagation()}
