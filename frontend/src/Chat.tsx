@@ -30,11 +30,15 @@ const getUserId = (): string => {
 const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.com'];
 
 /**
- * Triggers a browser download for a file hosted on a trusted CDN.
- * Uses a fetch->blob->objectURL flow so media is downloaded directly instead of
- * opening in a new tab.
+ * Download progress callback type.
  */
-const downloadFile = (url: string, filename: string): void => {
+type DownloadProgressCallback = (progress: number) => void; // 0–1
+
+/**
+ * Triggers a browser download for a file hosted on a trusted CDN.
+ * Supports optional progress callback for showing download progress.
+ */
+const downloadFile = (url: string, filename: string, onProgress?: DownloadProgressCallback): void => {
   const normalizeFilename = (name: string, fallback: string): string => {
     const raw = (name || '').trim();
     const cleaned = raw
@@ -57,7 +61,6 @@ const downloadFile = (url: string, filename: string): void => {
   };
 
   void (async () => {
-    // Parse and validate — do nothing if the URL is invalid or the host is not trusted.
     let parsed: URL;
     try {
       parsed = new URL(url);
@@ -75,6 +78,7 @@ const downloadFile = (url: string, filename: string): void => {
     const safeFilename = normalizeFilename(filename, normalizeFilename(fallbackName, 'download'));
 
     try {
+      onProgress?.(0);
       const response = await fetch(parsed.href, {
         method: 'GET',
         mode: 'cors',
@@ -83,14 +87,36 @@ const downloadFile = (url: string, filename: string): void => {
       });
       if (!response.ok) throw new Error('Download failed');
 
-      const blob = await response.blob();
-      if (!blob || blob.size === 0) throw new Error('Empty download');
+      const contentLength = response.headers.get('content-length');
+      const total = contentLength ? parseInt(contentLength, 10) : 0;
 
-      const objectUrl = URL.createObjectURL(blob);
-      triggerAnchorDownload(objectUrl, safeFilename);
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      if (total > 0 && response.body) {
+        const reader = response.body.getReader();
+        const chunks: Uint8Array<ArrayBuffer>[] = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value as Uint8Array<ArrayBuffer>);
+          received += (value?.length ?? 0);
+          onProgress?.(received / total);
+        }
+        onProgress?.(1);
+        const blob = new Blob(chunks);
+        if (!blob || blob.size === 0) throw new Error('Empty download');
+        const objectUrl = URL.createObjectURL(blob);
+        triggerAnchorDownload(objectUrl, safeFilename);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      } else {
+        const blob = await response.blob();
+        if (!blob || blob.size === 0) throw new Error('Empty download');
+        onProgress?.(1);
+        const objectUrl = URL.createObjectURL(blob);
+        triggerAnchorDownload(objectUrl, safeFilename);
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      }
     } catch {
-      // Fallback for CDNs that block CORS: still attempt browser-managed download.
+      onProgress?.(0);
       triggerAnchorDownload(parsed.href, safeFilename);
     }
   })();
@@ -716,8 +742,8 @@ const MobileReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
     box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
   }
 
-  ${props => props.$sender === 'me' 
-    ? `right: 10px;` 
+  ${props => props.$sender === 'me'
+    ? `right: 10px;`
     : `left: 10px;`
   }
 
@@ -790,11 +816,11 @@ const FooterContainer = styled.div<{ $sender: 'me' | 'other' }>`
   gap: 4px;
   margin-top: 0;
 
-  ${props => props.$sender === 'me' 
+  ${props => props.$sender === 'me'
     ? `
       justify-content: flex-end;
       padding-right: 2px;
-    ` 
+    `
     : `
       justify-content: flex-start;
       padding-left: 2px;
@@ -1411,8 +1437,8 @@ const ReactionsContainer = styled.div<{ $sender: 'me' | 'other' }>`
     }
   }
 
-  ${props => props.$sender === 'me' 
-    ? `left: -10px;` 
+  ${props => props.$sender === 'me'
+    ? `left: -10px;`
     : `right: -10px;`
   }
 `;
@@ -1700,7 +1726,7 @@ const UserListItem = styled.li<{ index: number }>`
     transform: translateX(4px);
   }
 `;
-const MobileUserListToggle = styled(SendButton)<{ $isOpen?: boolean }>`
+const MobileUserListToggle = styled(SendButton) <{ $isOpen?: boolean }>`
   display: none;
   @media (max-width: 768px) {
     display: flex;
@@ -1856,7 +1882,7 @@ const ReplyText = styled.div`
   span { opacity: 0.8; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 `;
 
-  const QuotedMessageContainer = styled.div<{ $sender: 'me' | 'other' }>`
+const QuotedMessageContainer = styled.div<{ $sender: 'me' | 'other' }>`
   background: ${props => props.$sender === 'me' ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg-hover)'};
   padding: 8px;
   border-radius: 8px;
@@ -2078,11 +2104,11 @@ const ReactionsPopup = ({
     return () => tabsEl.removeEventListener('wheel', onWheel);
   }, []);
 
-  const allReactions = Object.entries(popupData.reactions).flatMap(([emoji, users]) => 
+  const allReactions = Object.entries(popupData.reactions).flatMap(([emoji, users]) =>
     users.map(user => ({ ...user, emoji }))
   );
 
-  const reactionsForTab = activeTab === 'All' 
+  const reactionsForTab = activeTab === 'All'
     ? allReactions
     : allReactions.filter(r => r.emoji === activeTab);
 
@@ -2099,8 +2125,8 @@ const ReactionsPopup = ({
       <ReactionsPopupContent onClick={(e) => e.stopPropagation()}>
         <ReactionsPopupHeader ref={tabsRef}>
           {tabs.map(tab => {
-            const count = tab === 'All' 
-              ? allReactions.length 
+            const count = tab === 'All'
+              ? allReactions.length
               : popupData.reactions[tab]?.length || 0;
             if (count === 0) return null;
             return (
@@ -2118,7 +2144,7 @@ const ReactionsPopup = ({
             const initial = displayName ? displayName.charAt(0).toUpperCase() : '?';
 
             return (
-              <ReactionUserRow 
+              <ReactionUserRow
                 key={index}
                 onClick={() => {
                   if (userId === currentUserId) {
@@ -2128,13 +2154,13 @@ const ReactionsPopup = ({
                 style={{ cursor: userId === currentUserId ? 'pointer' : 'default' }}
               >
                 <UserAvatar>{initial}</UserAvatar>
-                <div style={{flexGrow: 1}}>
-                  <p style={{fontWeight: 'bold'}}>{displayName}</p>
+                <div style={{ flexGrow: 1 }}>
+                  <p style={{ fontWeight: 'bold' }}>{displayName}</p>
                   {userId === currentUserId && (
                     <span style={{ fontSize: '0.8rem', color: '#a0aec0' }}>Click to remove</span>
                   )}
                 </div>
-                <span style={{fontSize: '24px'}}>{emoji}</span>
+                <span style={{ fontSize: '24px' }}>{emoji}</span>
               </ReactionUserRow>
             )
           })}
@@ -2537,6 +2563,17 @@ const ReportActions = styled.div`
   gap: 0.6rem;
 `;
 
+/* ─── Custom Video Player Styles ─────────────────────────────────── */
+const videoFadeIn = keyframes`
+  from { opacity: 0; }
+  to   { opacity: 1; }
+`;
+
+const controlsSlideUp = keyframes`
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+`;
+
 const VideoPlayerWrapper = styled.div`
   ${mediaFrameStyles}
   cursor: pointer;
@@ -2544,13 +2581,256 @@ const VideoPlayerWrapper = styled.div`
   align-items: center;
   justify-content: center;
   background: #000;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  position: relative;
 
   video {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
+    background: #000;
     border-radius: 0.75rem;
+  }
+`;
+
+const CVPContainer = styled.div`
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+
+  /* Fullscreen: fill viewport, letterbox with object-fit: contain */
+  &:fullscreen, &:-webkit-full-screen {
+    border-radius: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    background: #000;
+    animation: ${videoFadeIn} 0.3s ease;
+    /* Prevent fullscreen video from overflowing on mobile portrait */
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  &:fullscreen video, &:-webkit-full-screen video {
+    width: 100vw;
+    height: 100vh;
+    max-width: 100vw;
+    max-height: 100vh;
+    object-fit: contain;
+  }
+`;
+
+const CVPControls = styled.div<{ $visible: boolean }>`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 60%, transparent 100%);
+  padding: 8px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  opacity: ${p => p.$visible ? 1 : 0};
+  transition: opacity 0.25s ease;
+  pointer-events: ${p => p.$visible ? 'all' : 'none'};
+  border-radius: 0 0 0.75rem 0.75rem;
+  animation: ${controlsSlideUp} 0.2s ease;
+`;
+
+const CVPTimelineWrapper = styled.div`
+  width: 100%;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 6px 0;
+  position: relative;
+`;
+
+const CVPTimelineTrack = styled.div`
+  width: 100%;
+  height: 3px;
+  background: rgba(255,255,255,0.3);
+  border-radius: 2px;
+  position: relative;
+  overflow: visible;
+`;
+
+const CVPTimelineFill = styled.div<{ $pct: number }>`
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: ${p => p.$pct}%;
+  background: #3b82f6;
+  border-radius: 2px;
+  transition: width 0.1s linear;
+`;
+
+const CVPTimelineThumb = styled.div<{ $pct: number }>`
+  position: absolute;
+  top: 50%;
+  left: ${p => p.$pct}%;
+  transform: translate(-50%, -50%);
+  width: 11px;
+  height: 11px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 4px rgba(0,0,0,0.5);
+  transition: left 0.1s linear;
+`;
+
+const CVPBottomRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`;
+
+const CVPIconBtn = styled.button`
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+  svg { width: 17px; height: 17px; }
+  &:hover { background: rgba(255,255,255,0.15); transform: scale(1.12); }
+  &:active { transform: scale(0.9); }
+`;
+
+const CVPTime = styled.span`
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.9);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 500;
+  flex-shrink: 0;
+`;
+
+const CVPSpeedBtn = styled.button`
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+  &:hover { background: rgba(255,255,255,0.25); }
+`;
+
+const CVPDoubleTapOverlay = styled.div<{ $side: 'left' | 'right' | null }>`
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: ${p => p.$side === 'left' ? '0' : 'auto'};
+  right: ${p => p.$side === 'right' ? '0' : 'auto'};
+  width: 35%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: ${p => p.$side ? 1 : 0};
+  transition: opacity 0.25s ease;
+`;
+
+const CVPTapIndicator = styled.div`
+  background: rgba(255,255,255,0.18);
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #fff;
+  svg { width: 20px; height: 20px; }
+`;
+
+const CVPCenterPlayBtn = styled.div<{ $visible: boolean }>`
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 48px;
+  height: 48px;
+  background: rgba(0,0,0,0.55);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: ${p => p.$visible ? 1 : 0};
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  svg { width: 24px; height: 24px; color: #fff; }
+`;
+
+/* ─── Download Progress Ring (WhatsApp/Telegram style) ───────────── */
+const DownloadProgressRing = styled.div<{ $progress: number; $visible: boolean }>`
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: ${p => p.$visible ? 'flex' : 'none'};
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: rotate(-90deg);
+  }
+
+  circle.track {
+    fill: none;
+    stroke: rgba(255,255,255,0.2);
+    stroke-width: 3;
+  }
+
+  circle.progress {
+    fill: none;
+    stroke: #3b82f6;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 100;
+    stroke-dashoffset: ${p => 100 - (p.$progress * 100)};
+    transition: stroke-dashoffset 0.15s linear;
+  }
+
+  .cancel-icon {
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    svg { position: static; transform: none; width: 14px; height: 14px; }
   }
 `;
 
@@ -2589,92 +2869,367 @@ interface Gif { id: string; preview: string; url: string; }
 
 // --- CHILD COMPONENTS ---
 
+/* ─── Custom Video Player Component ──────────────────────────────── */
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+const formatTime = (s: number): string => {
+  if (!isFinite(s) || isNaN(s)) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+};
+
 const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; onPointerDown?: () => void; onFullscreenEnter?: () => void }) => {
+  const containerRef = useRef<HTMLDivElement>(null!);
   const videoRef = useRef<HTMLVideoElement>(null!);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const [speedIdx, setSpeedIdx] = useState(2); // 1x default
+  const [doubleTapSide, setDoubleTapSide] = useState<'left' | 'right' | null>(null);
+  const [showCenterPlay, setShowCenterPlay] = useState(false);
+  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const doubleTapTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTapTimeRef = useRef(0);
+  const lastTapXRef = useRef(0);
+  const centerPlayTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleLoadedMetadata = () => {
-    // Seek slightly past 0 to generate a poster thumbnail in browsers that need it
-    if (videoRef.current) videoRef.current.currentTime = 0.1;
-  };
+  const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  // Track fullscreen changes so we can scroll back to this video on exit
+  const resetControlsTimer = useCallback(() => {
+    if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current);
+    setShowControls(true);
+    if (isPlaying) {
+      hideControlsTimerRef.current = setTimeout(() => setShowControls(false), 3000);
+    }
+  }, [isPlaying]);
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const handleFullscreenChange = () => {
-      // Entering fullscreen — notify parent to save position
-      if (document.fullscreenElement === video || (document as any).webkitFullscreenElement === video) {
+    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onLoadedMetadata = () => {
+      setDuration(video.duration);
+      video.currentTime = 0.01;
+    };
+    const onPlay = () => { setIsPlaying(true); resetControlsTimer(); };
+    const onPause = () => { setIsPlaying(false); setShowControls(true); if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current); };
+    const onEnded = () => { setIsPlaying(false); setShowControls(true); };
+    const onVolumeChange = () => { setVolume(video.volume); setIsMuted(video.muted); };
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('loadedmetadata', onLoadedMetadata);
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onEnded);
+    video.addEventListener('volumechange', onVolumeChange);
+    return () => {
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
+      video.removeEventListener('volumechange', onVolumeChange);
+    };
+  }, [resetControlsTimer]);
+
+  // Fullscreen change tracking
+  useEffect(() => {
+    const handleFSChange = () => {
+      const fs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
+      setIsFullscreen(fs);
+      if (fs) {
         onFullscreenEnter?.();
+      } else {
+        // On exit: blur to prevent focus-restoration scroll nudge
+        if (document.activeElement instanceof HTMLVideoElement) document.activeElement.blur();
       }
     };
-    video.addEventListener('fullscreenchange', handleFullscreenChange);
-    video.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('fullscreenchange', handleFSChange);
+    document.addEventListener('webkitfullscreenchange', handleFSChange);
     return () => {
-      video.removeEventListener('fullscreenchange', handleFullscreenChange);
-      video.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('fullscreenchange', handleFSChange);
+      document.removeEventListener('webkitfullscreenchange', handleFSChange);
     };
   }, [onFullscreenEnter]);
 
+  useEffect(() => { return () => { if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current); }; }, []);
+  useEffect(() => { resetControlsTimer(); }, [isPlaying, resetControlsTimer]);
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) v.play().catch(() => {});
+    else v.pause();
+  };
+
+  const skip = (sec: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = Math.min(Math.max(v.currentTime + sec, 0), v.duration || 0);
+  };
+
+  const toggleMute = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+  };
+
+  const cycleSpeed = () => {
+    const nextIdx = (speedIdx + 1) % SPEEDS.length;
+    setSpeedIdx(nextIdx);
+    if (videoRef.current) videoRef.current.playbackRate = SPEEDS[nextIdx];
+  };
+
+  const toggleFullscreen = () => {
+    const c = containerRef.current;
+    if (!c) return;
+    if (!document.fullscreenElement && !(document as any).webkitFullscreenElement) {
+      (c.requestFullscreen?.() || (c as any).webkitRequestFullscreen?.())?.catch(() => {});
+    } else {
+      (document.exitFullscreen?.() || (document as any).webkitExitFullscreen?.())?.catch(() => {});
+    }
+  };
+
+  const togglePiP = async () => {
+    const v = videoRef.current;
+    if (!v) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (v.requestPictureInPicture) {
+        await v.requestPictureInPicture();
+      }
+    } catch {}
+  };
+
+  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    const track = e.currentTarget;
+    const rect = track.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const v = videoRef.current;
+    if (v && duration > 0) v.currentTime = ratio * duration;
+  };
+
+  const handleContainerTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Ignore clicks on control buttons
+    if ((e.target as HTMLElement).closest('button, input, [data-cvp-controls]')) return;
+
+    const now = Date.now();
+    const dt = now - lastTapTimeRef.current;
+    const rect = containerRef.current.getBoundingClientRect();
+    const tapX = e.clientX - rect.left;
+    const containerWidth = rect.width;
+
+    if (dt < 350 && Math.abs(tapX - lastTapXRef.current) < containerWidth * 0.6) {
+      // Double tap detected
+      if (doubleTapTimerRef.current) clearTimeout(doubleTapTimerRef.current);
+      const side = tapX < containerWidth / 2 ? 'left' : 'right';
+      const skipSec = side === 'left' ? -10 : 10;
+      skip(skipSec);
+      setDoubleTapSide(side);
+      if (doubleTapTimerRef.current) clearTimeout(doubleTapTimerRef.current);
+      doubleTapTimerRef.current = setTimeout(() => setDoubleTapSide(null), 700);
+      lastTapTimeRef.current = 0;
+    } else {
+      // Single tap — show/hide controls or play/pause
+      lastTapTimeRef.current = now;
+      lastTapXRef.current = tapX;
+      doubleTapTimerRef.current = setTimeout(() => {
+        if (showControls && isPlaying) {
+          setShowControls(false);
+        } else {
+          resetControlsTimer();
+          togglePlay();
+          // Show center play indicator
+          if (centerPlayTimerRef.current) clearTimeout(centerPlayTimerRef.current);
+          setShowCenterPlay(true);
+          centerPlayTimerRef.current = setTimeout(() => setShowCenterPlay(false), 600);
+        }
+      }, 200);
+    }
+  };
+
   return (
-    // No custom PlayIcon overlay — native <controls> provides the single play button
-    // so there is never a double-play-button situation on any device.
     <VideoPlayerWrapper onContextMenu={(e) => e.preventDefault()} onPointerDown={() => onPointerDown?.()}>
-      <video
-        ref={videoRef}
-        src={sanitizeMediaUrl(src)}
-        onLoadedMetadata={handleLoadedMetadata}
-        onDoubleClick={(e) => e.preventDefault()}
-        style={{ zIndex: 1, position: 'relative' }}
-        controls
-        crossOrigin="anonymous"
-        preload="metadata"
-      />
+      <CVPContainer
+        ref={containerRef}
+        onClick={handleContainerTap}
+        onMouseMove={resetControlsTimer}
+        onTouchStart={resetControlsTimer}
+        data-cvp
+      >
+        <video
+          ref={videoRef}
+          src={sanitizeMediaUrl(src)}
+          crossOrigin="anonymous"
+          preload="metadata"
+          playsInline
+          style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#000', display: 'block' }}
+        />
+
+        {/* Double tap indicators */}
+        <CVPDoubleTapOverlay $side={doubleTapSide === 'left' ? 'left' : null} style={{ left: 0 }}>
+          <CVPTapIndicator>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="11 17 6 12 11 7" /><polyline points="18 17 13 12 18 7" />
+            </svg>
+            10s
+          </CVPTapIndicator>
+        </CVPDoubleTapOverlay>
+        <CVPDoubleTapOverlay $side={doubleTapSide === 'right' ? 'right' : null} style={{ right: 0 }}>
+          <CVPTapIndicator>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" />
+            </svg>
+            10s
+          </CVPTapIndicator>
+        </CVPDoubleTapOverlay>
+
+        {/* Center play/pause flash */}
+        <CVPCenterPlayBtn $visible={showCenterPlay}>
+          {isPlaying
+            ? <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            : <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          }
+        </CVPCenterPlayBtn>
+
+        {/* Controls overlay */}
+        <CVPControls $visible={showControls} data-cvp-controls onClick={(e) => e.stopPropagation()}>
+          {/* Timeline */}
+          <CVPTimelineWrapper
+            onMouseDown={(e) => { setIsDraggingTimeline(true); handleTimelineClick(e); }}
+            onMouseMove={(e) => { if (isDraggingTimeline) handleTimelineClick(e); }}
+            onMouseUp={() => setIsDraggingTimeline(false)}
+            onMouseLeave={() => setIsDraggingTimeline(false)}
+            onTouchStart={(e) => { setIsDraggingTimeline(true); handleTimelineClick(e); e.stopPropagation(); }}
+            onTouchMove={(e) => { if (isDraggingTimeline) handleTimelineClick(e); e.stopPropagation(); }}
+            onTouchEnd={() => setIsDraggingTimeline(false)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CVPTimelineTrack>
+              <CVPTimelineFill $pct={pct} />
+              <CVPTimelineThumb $pct={pct} />
+            </CVPTimelineTrack>
+          </CVPTimelineWrapper>
+
+          {/* Bottom row */}
+          <CVPBottomRow>
+            {/* Play/Pause */}
+            <CVPIconBtn onClick={togglePlay} title={isPlaying ? 'Pause' : 'Play'} aria-label={isPlaying ? 'Pause' : 'Play'}>
+              {isPlaying
+                ? <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                : <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              }
+            </CVPIconBtn>
+
+            {/* Skip back 10s */}
+            <CVPIconBtn onClick={() => skip(-10)} title="Back 10s" aria-label="Back 10 seconds">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12.83 5A10 10 0 1 0 21 12"/>
+                <path d="M12 8 9 12h6"/>
+                <text x="10" y="18" fontSize="5" fill="currentColor" stroke="none" fontWeight="bold">10</text>
+              </svg>
+            </CVPIconBtn>
+
+            {/* Skip forward 10s */}
+            <CVPIconBtn onClick={() => skip(10)} title="Forward 10s" aria-label="Forward 10 seconds">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11.17 5A10 10 0 1 1 3 12"/>
+                <path d="M12 8l3 4H9"/>
+                <text x="10" y="18" fontSize="5" fill="currentColor" stroke="none" fontWeight="bold">10</text>
+              </svg>
+            </CVPIconBtn>
+
+            {/* Volume/Mute */}
+            <CVPIconBtn onClick={toggleMute} title={isMuted ? 'Unmute' : 'Mute'} aria-label={isMuted ? 'Unmute' : 'Mute'}>
+              {isMuted || volume === 0
+                ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+              }
+            </CVPIconBtn>
+
+            {/* Time display */}
+            <CVPTime>{formatTime(currentTime)} / {formatTime(duration)}</CVPTime>
+
+            {/* Spacer */}
+            <div style={{ flex: 1 }} />
+
+            {/* Playback speed */}
+            <CVPSpeedBtn onClick={cycleSpeed} title="Playback speed" aria-label="Playback speed">
+              {SPEEDS[speedIdx]}×
+            </CVPSpeedBtn>
+
+            {/* Picture in Picture */}
+            {document.pictureInPictureEnabled && (
+              <CVPIconBtn onClick={togglePiP} title="Picture in Picture" aria-label="Picture in Picture">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="4" width="20" height="14" rx="2"/><rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor" stroke="none" opacity="0.6"/>
+                </svg>
+              </CVPIconBtn>
+            )}
+
+            {/* Fullscreen */}
+            <CVPIconBtn onClick={toggleFullscreen} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+              {isFullscreen
+                ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
+                : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+              }
+            </CVPIconBtn>
+          </CVPBottomRow>
+        </CVPControls>
+      </CVPContainer>
     </VideoPlayerWrapper>
   );
 };
 
 const MediaDisplay = ({ msg, openLightbox }: { msg: Message, openLightbox: (url: string) => void }) => {
-    const isVideo = msg.type === 'video' || msg.url?.match(/\.(mp4|webm|mov)$/i);
-    const isImage = msg.type === 'image' || msg.url?.match(/\.(jpeg|jpg|gif|png|svg)$/i);
+  const isVideo = msg.type === 'video' || msg.url?.match(/\.(mp4|webm|mov)$/i);
+  const isImage = msg.type === 'image' || msg.url?.match(/\.(jpeg|jpg|gif|png|svg)$/i);
 
-    if (isImage && msg.url) {
-        return <img src={sanitizeMediaUrl(msg.url)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(msg.url); if (u) openLightbox(u); }} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />;
-    }
+  if (isImage && msg.url) {
+    return <img src={sanitizeMediaUrl(msg.url)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(msg.url); if (u) openLightbox(u); }} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />;
+  }
 
-    if (isVideo && msg.url) {
-        return <VideoPlayer src={msg.url} />;
-    }
-    return null;
+  if (isVideo && msg.url) {
+    return <VideoPlayer src={msg.url} />;
+  }
+  return null;
 };
 
 // --- URL Detection helpers ---
 // Curated list of known valid TLDs — filters gibberish like .gfdgf or .gtd
 const VALID_TLDS = new Set([
   // Generic
-  'com','org','net','edu','gov','mil','int','info','biz','name','pro',
+  'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'info', 'biz', 'name', 'pro',
   // Popular new gTLDs
-  'io','co','ai','app','dev','web','tech','online','site','store','shop',
-  'blog','cloud','digital','media','social','email','live','video','tv',
-  'news','agency','studio','design','space','team','group','global',
-  'world','today','network','finance','health','care','academy',
+  'io', 'co', 'ai', 'app', 'dev', 'web', 'tech', 'online', 'site', 'store', 'shop',
+  'blog', 'cloud', 'digital', 'media', 'social', 'email', 'live', 'video', 'tv',
+  'news', 'agency', 'studio', 'design', 'space', 'team', 'group', 'global',
+  'world', 'today', 'network', 'finance', 'health', 'care', 'academy',
   // Country codes
-  'ac','ad','ae','af','ag','al','am','ao','ar','as','at','au','aw','az',
-  'ba','bb','bd','be','bg','bh','bi','bj','bm','bn','bo','br','bs','bt',
-  'bw','by','bz','ca','cc','cd','cf','cg','ch','ci','ck','cl','cm','cn',
-  'cr','cu','cv','cy','cz','de','dj','dk','dm','do','dz','ec','ee','eg',
-  'er','es','et','eu','fi','fj','fo','fr','ga','gb','gd','ge','gg','gh',
-  'gi','gl','gm','gn','gp','gq','gr','gt','gu','gy','hk','hn','hr','ht',
-  'hu','id','ie','il','im','in','iq','ir','is','it','je','jm','jo','jp',
-  'ke','kg','kh','km','kn','kr','kw','ky','kz','la','lb','lc','li','lk',
-  'lr','ls','lt','lu','lv','ly','ma','mc','md','me','mg','mk','ml','mm',
-  'mn','mo','mp','mq','mr','ms','mt','mu','mv','mw','mx','my','mz','na',
-  'nc','ne','nf','ng','ni','nl','no','np','nr','nu','nz','om','pa','pe',
-  'pf','pg','ph','pk','pl','pm','pn','pr','ps','pt','pw','py','qa','re',
-  'ro','rs','ru','rw','sa','sb','sc','sd','se','sg','sh','si','sk','sl',
-  'sm','sn','so','sr','st','su','sv','sy','sz','tc','td','tf','tg','th',
-  'tj','tk','tl','tm','tn','to','tr','tt','tv','tw','tz','ua','ug','uk',
-  'um','us','uy','uz','va','vc','ve','vg','vi','vn','vu','wf','ws','ye',
-  'yt','za','zm','zw',
+  'ac', 'ad', 'ae', 'af', 'ag', 'al', 'am', 'ao', 'ar', 'as', 'at', 'au', 'aw', 'az',
+  'ba', 'bb', 'bd', 'be', 'bg', 'bh', 'bi', 'bj', 'bm', 'bn', 'bo', 'br', 'bs', 'bt',
+  'bw', 'by', 'bz', 'ca', 'cc', 'cd', 'cf', 'cg', 'ch', 'ci', 'ck', 'cl', 'cm', 'cn',
+  'cr', 'cu', 'cv', 'cy', 'cz', 'de', 'dj', 'dk', 'dm', 'do', 'dz', 'ec', 'ee', 'eg',
+  'er', 'es', 'et', 'eu', 'fi', 'fj', 'fo', 'fr', 'ga', 'gb', 'gd', 'ge', 'gg', 'gh',
+  'gi', 'gl', 'gm', 'gn', 'gp', 'gq', 'gr', 'gt', 'gu', 'gy', 'hk', 'hn', 'hr', 'ht',
+  'hu', 'id', 'ie', 'il', 'im', 'in', 'iq', 'ir', 'is', 'it', 'je', 'jm', 'jo', 'jp',
+  'ke', 'kg', 'kh', 'km', 'kn', 'kr', 'kw', 'ky', 'kz', 'la', 'lb', 'lc', 'li', 'lk',
+  'lr', 'ls', 'lt', 'lu', 'lv', 'ly', 'ma', 'mc', 'md', 'me', 'mg', 'mk', 'ml', 'mm',
+  'mn', 'mo', 'mp', 'mq', 'mr', 'ms', 'mt', 'mu', 'mv', 'mw', 'mx', 'my', 'mz', 'na',
+  'nc', 'ne', 'nf', 'ng', 'ni', 'nl', 'no', 'np', 'nr', 'nu', 'nz', 'om', 'pa', 'pe',
+  'pf', 'pg', 'ph', 'pk', 'pl', 'pm', 'pn', 'pr', 'ps', 'pt', 'pw', 'py', 'qa', 're',
+  'ro', 'rs', 'ru', 'rw', 'sa', 'sb', 'sc', 'sd', 'se', 'sg', 'sh', 'si', 'sk', 'sl',
+  'sm', 'sn', 'so', 'sr', 'st', 'su', 'sv', 'sy', 'sz', 'tc', 'td', 'tf', 'tg', 'th',
+  'tj', 'tk', 'tl', 'tm', 'tn', 'to', 'tr', 'tt', 'tv', 'tw', 'tz', 'ua', 'ug', 'uk',
+  'um', 'us', 'uy', 'uz', 'va', 'vc', 've', 'vg', 'vi', 'vn', 'vu', 'wf', 'ws', 'ye',
+  'yt', 'za', 'zm', 'zw',
 ]);
 
 // color used for all hyperlinks — other-users messages use CSS variable (blue in
@@ -2789,9 +3344,9 @@ const renderMessageContent = (
 
   const DownloadSvg = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-      <polyline points="7 10 12 15 17 10"/>
-      <line x1="12" y1="15" x2="12" y2="3"/>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   );
 
@@ -2876,14 +3431,14 @@ const renderMessageContent = (
       <MediaContent>
         <FileAttachmentCard onClick={() => msg.url && downloadFile(msg.url, msg.originalName || 'file')}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
           </svg>
           <span>{msg.originalName || 'Download file'}</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', flexShrink: 0, opacity: 0.6 }}>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
         </FileAttachmentCard>
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
@@ -3138,7 +3693,7 @@ const MessageItem = React.memo(({
         mediaWasTapped.current = false;
         return;
       }
-      
+
       // If this 'tap' is the end of a long press, reset the flag and do nothing.
       if (wasLongPressed.current) {
         wasLongPressed.current = false;
@@ -3204,17 +3759,17 @@ const MessageItem = React.memo(({
     const newX = Math.min(Math.max(mx, 0), 80);
     messageRowRef.current.style.transform = `translateX(${newX}px)`;
     messageRowRef.current.style.transition = 'none';
-  }, { 
-    filterTaps: true, 
-    eventOptions: { passive: true }, 
+  }, {
+    filterTaps: true,
+    eventOptions: { passive: true },
     target: messageRowRef,
     drag: { threshold: 10 }
   });
-  
+
   const currentUserReaction = useMemo(() => {
     if (!msg.reactions) return null;
     for (const emoji of Object.keys(msg.reactions)) {
-      if (msg.reactions[emoji].some((r: {userId: string}) => r.userId === currentUserId)) {
+      if (msg.reactions[emoji].some((r: { userId: string }) => r.userId === currentUserId)) {
         return emoji;
       }
     }
@@ -3350,138 +3905,157 @@ const MessageItem = React.memo(({
 
   return (
     <React.Fragment>
-    <MessageRow
-      id={`message-${msg.id}`}
-      ref={messageRowRef}
-      $sender={sender}
-      $isSelected={isSelected}
-      $isActiveDeleteMenu={activeDeleteMenu === msg.id}
-      $isGrouped={!showUsername}
-      onDoubleClick={(e) => {
-        if (!isMobileView && !isSelectModeActive && !isDeleted) {
-          // Only quote when double-clicking *outside* the message bubble
-          // (i.e. the empty space beside the bubble). If the double-click
-          // target is inside the bubble, ignore it so normal text selection
-          // and interactions work.
-          if (messageBubbleRef.current && messageBubbleRef.current.contains(e.target as Node)) {
-            return;
+      <MessageRow
+        id={`message-${msg.id}`}
+        ref={messageRowRef}
+        $sender={sender}
+        $isSelected={isSelected}
+        $isActiveDeleteMenu={activeDeleteMenu === msg.id}
+        $isGrouped={!showUsername}
+        onDoubleClick={(e) => {
+          if (!isMobileView && !isSelectModeActive && !isDeleted) {
+            // Only quote when double-clicking *outside* the message bubble
+            // (i.e. the empty space beside the bubble). If the double-click
+            // target is inside the bubble, ignore it so normal text selection
+            // and interactions work.
+            if (messageBubbleRef.current && messageBubbleRef.current.contains(e.target as Node)) {
+              return;
+            }
+            e.preventDefault();
+            handleSetReply(msg);
           }
-          e.preventDefault();
-          handleSetReply(msg);
-        }
-      }}
-      onMouseDown={handleLongPressStart}
-      onMouseUp={handleLongPressEnd}
-      onTouchStart={handleLongPressStart}
-      onTouchMove={handleLongPressMove}
-      onTouchEnd={handleLongPressEnd}
-      onTouchCancel={handleLongPressCancel}
-    >
-      {isSelectModeActive && (!isMobileView || selectedMessages.length > 1) && (
-        <SelectCheckboxContainer
-          data-checkbox
-          onClick={(e) => {
-            e.stopPropagation();
-            handleToggleSelectMessage(msg.id);
-          }}
-        >
-          <Checkbox checked={isSelected} />
-        </SelectCheckboxContainer>
-      )}
-      <div 
-        style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: sender === 'me' ? 'flex-end' : 'flex-start', width: '100%' }}
+        }}
+        onMouseDown={handleLongPressStart}
+        onMouseUp={handleLongPressEnd}
+        onTouchStart={handleLongPressStart}
+        onTouchMove={handleLongPressMove}
+        onTouchEnd={handleLongPressEnd}
+        onTouchCancel={handleLongPressCancel}
       >
-        {!isDeleted && showUsername && <Username $sender={sender}>{msg.username}</Username>}
-        <MessageBubble 
-          ref={messageBubbleRef}
-          $sender={sender} 
-          $messageType={msg.type} 
-          $isUploading={msg.isUploading} 
-          $uploadError={msg.uploadError}
-          style={{ marginBottom: (!isDeleted && msg.reactions && Object.keys(msg.reactions).length > 0) ? '18px' : undefined }}
+        {isSelectModeActive && (!isMobileView || selectedMessages.length > 1) && (
+          <SelectCheckboxContainer
+            data-checkbox
+            onClick={(e) => {
+              e.stopPropagation();
+              handleToggleSelectMessage(msg.id);
+            }}
+          >
+            <Checkbox checked={isSelected} />
+          </SelectCheckboxContainer>
+        )}
+        <div
+          style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: sender === 'me' ? 'flex-end' : 'flex-start', width: '100%' }}
         >
-          {msg.replyingTo && (
-            <QuotedMessageContainer $sender={sender} onClick={() => { if (msg.replyingTo) scrollToMessage(msg.replyingTo.id, msg.id); }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p>{msg.replyingTo.username}</p>
-                <span style={msg.replyingTo.isDeleted ? { fontStyle: 'italic', opacity: 0.7 } : undefined}>
-                  {msg.replyingTo.isDeleted ? 'This message has been deleted.' : msg.replyingTo.text}
-                </span>
-              </div>
-              {!msg.replyingTo.isDeleted && msg.replyingTo.url && (msg.replyingTo.type === 'image' || msg.replyingTo.type === 'video') && (
-                quotedPreviewThumbUrl ? (
-                  <QuotedMediaThumb>
-                    <img
-                      src={quotedPreviewThumbUrl}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
+          {!isDeleted && showUsername && <Username $sender={sender}>{msg.username}</Username>}
+          <MessageBubble
+            ref={messageBubbleRef}
+            $sender={sender}
+            $messageType={msg.type}
+            $isUploading={msg.isUploading}
+            $uploadError={msg.uploadError}
+            style={{ marginBottom: (!isDeleted && msg.reactions && Object.keys(msg.reactions).length > 0) ? '18px' : undefined }}
+          >
+            {msg.replyingTo && (
+              <QuotedMessageContainer $sender={sender} onClick={() => { if (msg.replyingTo) scrollToMessage(msg.replyingTo.id, msg.id); }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p>{msg.replyingTo.username}</p>
+                  <span style={msg.replyingTo.isDeleted ? { fontStyle: 'italic', opacity: 0.7 } : undefined}>
+                    {msg.replyingTo.isDeleted ? 'This message has been deleted.' : msg.replyingTo.text}
+                  </span>
+                </div>
+                {!msg.replyingTo.isDeleted && msg.replyingTo.url && (msg.replyingTo.type === 'image' || msg.replyingTo.type === 'video') && (
+                  quotedPreviewThumbUrl ? (
+                    <QuotedMediaThumb>
+                      <img
+                        src={quotedPreviewThumbUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      {msg.replyingTo.type === 'video' && <QuotedVideoBadge>Video</QuotedVideoBadge>}
+                    </QuotedMediaThumb>
+                  ) : (
+                    <div
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '6px',
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(15, 23, 42, 0.28)',
+                        border: '1px solid rgba(148, 163, 184, 0.35)',
+                        color: 'rgba(241, 245, 249, 0.95)',
+                        fontSize: '0.66rem',
+                        fontWeight: 600,
+                        letterSpacing: '0.02em',
+                        textTransform: 'uppercase'
+                      }}
+                    >
+                      {msg.replyingTo.type === 'video' ? 'Video' : 'Photo'}
+                    </div>
+                  )
+                )}
+              </QuotedMessageContainer>
+            )}
+            {isDeleted ? (
+              <>
+                <MessageText style={{ fontStyle: 'italic', color: sender === 'me' ? '#bfdbfe' : '#a0aec0', userSelect: 'none', WebkitUserSelect: 'none', cursor: 'default' }}>
+                  {msg.deletedBy === currentUserId ? 'You deleted this message.' : 'This message has been deleted.'}
+                </MessageText>
+                {!isMobileView && (
+                  <MessageActions>
+                    <ActionButton
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const isNearBottom = rect.bottom + 100 > window.innerHeight;
+                        const menuWidth = 168;
+                        const wouldClipLeft = rect.right - menuWidth < 8;
+                        const hPos = wouldClipLeft
+                          ? { left: Math.max(8, rect.left) }
+                          : { right: window.innerWidth - rect.right };
+                        setMenuPos(isNearBottom
+                          ? { bottom: window.innerHeight - rect.top + 4, ...hPos }
+                          : { top: rect.bottom + 4, ...hPos }
+                        );
+                        openDeleteMenu(msg.id);
+                      }}
+                      title="More"
+                      aria-label="More actions"
+                      className="more-action-button"
+                      style={{ fontSize: '20px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >&#8942;</ActionButton>
+                  </MessageActions>
+                )}
+                <FooterContainer $sender={sender}>
+                  <Timestamp $sender={sender}>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
+                </FooterContainer>
+              </>
+            ) : isEditing ? (
+              msg.url ? (
+                <MediaContent>
+                  <MediaDisplay msg={msg} openLightbox={openLightbox} />
+                  <div style={{ paddingTop: '0.5rem' }}>
+                    <EditInput
+                      ref={editInputRef}
+                      value={editingText}
+                      onChange={(e) => {
+                        setEditingText(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${e.target.scrollHeight}px`;
+                      }}
+                      onKeyDown={handleKeyDown}
+                      rows={1}
                     />
-                    {msg.replyingTo.type === 'video' && <QuotedVideoBadge>Video</QuotedVideoBadge>}
-                  </QuotedMediaThumb>
-                ) : (
-                  <div
-                    style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '6px',
-                      flexShrink: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: 'rgba(15, 23, 42, 0.28)',
-                      border: '1px solid rgba(148, 163, 184, 0.35)',
-                      color: 'rgba(241, 245, 249, 0.95)',
-                      fontSize: '0.66rem',
-                      fontWeight: 600,
-                      letterSpacing: '0.02em',
-                      textTransform: 'uppercase'
-                    }}
-                  >
-                    {msg.replyingTo.type === 'video' ? 'Video' : 'Photo'}
+                    <EditActions>
+                      <ConfirmationButton className="cancel" onClick={handleCancelEdit}>Cancel</ConfirmationButton>
+                      <ConfirmationButton className="delete" onClick={handleSaveEdit}>Save</ConfirmationButton>
+                    </EditActions>
                   </div>
-                )
-              )}
-            </QuotedMessageContainer>
-          )}
-          {isDeleted ? (
-            <>
-              <MessageText style={{ fontStyle: 'italic', color: sender === 'me' ? '#bfdbfe' : '#a0aec0', userSelect: 'none', WebkitUserSelect: 'none', cursor: 'default' }}>
-                {msg.deletedBy === currentUserId ? 'You deleted this message.' : 'This message has been deleted.'}
-              </MessageText>
-              {!isMobileView && (
-                <MessageActions>
-                  <ActionButton
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const isNearBottom = rect.bottom + 100 > window.innerHeight;
-                      const menuWidth = 168;
-                      const wouldClipLeft = rect.right - menuWidth < 8;
-                      const hPos = wouldClipLeft
-                        ? { left: Math.max(8, rect.left) }
-                        : { right: window.innerWidth - rect.right };
-                      setMenuPos(isNearBottom
-                        ? { bottom: window.innerHeight - rect.top + 4, ...hPos }
-                        : { top: rect.bottom + 4, ...hPos }
-                      );
-                      openDeleteMenu(msg.id);
-                    }}
-                    title="More"
-                    aria-label="More actions"
-                    className="more-action-button"
-                    style={{ fontSize: '20px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >&#8942;</ActionButton>
-                </MessageActions>
-              )}
-              <FooterContainer $sender={sender}>
-                <Timestamp $sender={sender}>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
-              </FooterContainer>
-            </>
-          ) : isEditing ? (
-            msg.url ? (
-              <MediaContent>
-                <MediaDisplay msg={msg} openLightbox={openLightbox} />
-                <div style={{ paddingTop: '0.5rem' }}>
+                </MediaContent>
+              ) : (
+                <>
                   <EditInput
                     ref={editInputRef}
                     value={editingText}
@@ -3497,160 +4071,141 @@ const MessageItem = React.memo(({
                     <ConfirmationButton className="cancel" onClick={handleCancelEdit}>Cancel</ConfirmationButton>
                     <ConfirmationButton className="delete" onClick={handleSaveEdit}>Save</ConfirmationButton>
                   </EditActions>
-                </div>
-              </MediaContent>
+                </>
+              )
             ) : (
               <>
-                <EditInput
-                  ref={editInputRef}
-                  value={editingText}
-                  onChange={(e) => {
-                    setEditingText(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = `${e.target.scrollHeight}px`;
-                  }}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                />
-                <EditActions>
-                  <ConfirmationButton className="cancel" onClick={handleCancelEdit}>Cancel</ConfirmationButton>
-                  <ConfirmationButton className="delete" onClick={handleSaveEdit}>Save</ConfirmationButton>
-                </EditActions>
+                {selectedMessages[0] === msg.id && selectedMessages.length === 1 && (
+                  <MobileReactionPicker
+                    $sender={sender}
+                    className="mobile-reaction-picker"
+                  >
+                    {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                      <ReactionEmoji key={emoji} onClick={(e) => {
+                        e.stopPropagation();
+                        handleReact(msg.id, emoji);
+                        handleCancelSelectMode();
+                      }}>{emoji}</ReactionEmoji>
+                    ))}
+                    {currentUserReaction ? (
+                      <ReactionEmoji onClick={(e) => {
+                        e.stopPropagation();
+                        handleReact(msg.id, currentUserReaction);
+                        handleCancelSelectMode();
+                      }}>{currentUserReaction}</ReactionEmoji>
+                    ) : (
+                      <ReactionEmoji $isPlusIcon={true} onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        // Capture rect & msgId synchronously (e.currentTarget becomes null
+                        // after the event returns). Do NOT call handleCancelSelectMode here
+                        // — keeping select mode active means the MobileReactionPicker stays
+                        // mounted, so target.closest('.mobile-reaction-picker') reliably
+                        // catches the useDrag tap that fires when the finger lifts.
+                        // Select mode is cancelled in the emoji panel's onEmojiClick instead.
+                        const msgId = msg.id;
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        handleOpenFullEmojiPicker(rect, msgId);
+                      }}>+</ReactionEmoji>
+                    )}
+                  </MobileReactionPicker>
+                )}
+                {!isMobileView && (
+                  <MessageActions>
+                    <ActionButton ref={reactButtonRef} className="react-action-button" onClick={() => onOpenReactionPicker(msg.id, reactButtonRef.current!.getBoundingClientRect(), sender)} title="React" aria-label="Add reaction">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                    </ActionButton>
+                    <ActionButton
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const isNearBottom = rect.bottom + 190 > window.innerHeight;
+                        // Approximate menu width. If anchoring from the right would push
+                        // the menu off the left edge of the screen, anchor from left instead.
+                        const menuWidth = 168;
+                        const wouldClipLeft = rect.right - menuWidth < 8;
+                        const hPos = wouldClipLeft
+                          ? { left: Math.max(8, rect.left) }
+                          : { right: window.innerWidth - rect.right };
+                        setMenuPos(isNearBottom
+                          ? { bottom: window.innerHeight - rect.top + 4, ...hPos }
+                          : { top: rect.bottom + 4, ...hPos }
+                        );
+                        openDeleteMenu(msg.id);
+                      }}
+                      title="More"
+                      aria-label="More actions"
+                      className="more-action-button"
+                      style={{ fontSize: '20px' }}
+                    >&#8942;</ActionButton>
+                  </MessageActions>
+                )}
+                {/* DeleteMenu rendered as fixed portal — see block after </MessageRow> */}
+                {msg.type === 'text' && !msg.url && msg.text && (() => { const _u = detectFirstUrl(msg.text); return _u ? <LinkPreview url={_u} sender={sender} /> : null; })()}
+                {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined, sender, handleVideoFullscreenEnterForMessage, isMediaLoaded, onRequestMediaLoad)}
+                <FooterContainer $sender={sender}>
+                  <Timestamp $sender={sender}>{msg.edited && <span>(edited) </span>}{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
+                </FooterContainer>
               </>
-            )
-          ) : (
-            <>
-              {selectedMessages[0] === msg.id && selectedMessages.length === 1 && (
-                <MobileReactionPicker 
-                  $sender={sender}
-                  className="mobile-reaction-picker"
-                >
-                  {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
-                    <ReactionEmoji key={emoji} onClick={(e) => {
-                      e.stopPropagation();
-                      handleReact(msg.id, emoji);
-                      handleCancelSelectMode();
-                    }}>{emoji}</ReactionEmoji>
-                  ))}
-                  {currentUserReaction ? (
-                    <ReactionEmoji onClick={(e) => { 
-                      e.stopPropagation();
-                      handleReact(msg.id, currentUserReaction); 
-                      handleCancelSelectMode(); 
-                    }}>{currentUserReaction}</ReactionEmoji>
-                  ) : (
-                    <ReactionEmoji $isPlusIcon={true} onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      // Capture rect & msgId synchronously (e.currentTarget becomes null
-                      // after the event returns). Do NOT call handleCancelSelectMode here
-                      // — keeping select mode active means the MobileReactionPicker stays
-                      // mounted, so target.closest('.mobile-reaction-picker') reliably
-                      // catches the useDrag tap that fires when the finger lifts.
-                      // Select mode is cancelled in the emoji panel's onEmojiClick instead.
-                      const msgId = msg.id;
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      handleOpenFullEmojiPicker(rect, msgId);
-                    }}>+</ReactionEmoji>
-                  )}
-                </MobileReactionPicker>
-              )}
-              {!isMobileView && (
-                <MessageActions>
-                  <ActionButton ref={reactButtonRef} className="react-action-button" onClick={() => onOpenReactionPicker(msg.id, reactButtonRef.current!.getBoundingClientRect(), sender)} title="React" aria-label="Add reaction">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
-                  </ActionButton>
-                  <ActionButton
-                    onClick={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const isNearBottom = rect.bottom + 190 > window.innerHeight;
-                      // Approximate menu width. If anchoring from the right would push
-                      // the menu off the left edge of the screen, anchor from left instead.
-                      const menuWidth = 168;
-                      const wouldClipLeft = rect.right - menuWidth < 8;
-                      const hPos = wouldClipLeft
-                        ? { left: Math.max(8, rect.left) }
-                        : { right: window.innerWidth - rect.right };
-                      setMenuPos(isNearBottom
-                        ? { bottom: window.innerHeight - rect.top + 4, ...hPos }
-                        : { top: rect.bottom + 4, ...hPos }
-                      );
-                      openDeleteMenu(msg.id);
-                    }}
-                    title="More"
-                    aria-label="More actions"
-                    className="more-action-button"
-                    style={{ fontSize: '20px' }}
-                  >&#8942;</ActionButton>
-                </MessageActions>
-              )}
-              {/* DeleteMenu rendered as fixed portal — see block after </MessageRow> */}
-              {msg.type === 'text' && !msg.url && msg.text && (() => { const _u = detectFirstUrl(msg.text); return _u ? <LinkPreview url={_u} sender={sender} /> : null; })()}
-              {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined, sender, handleVideoFullscreenEnterForMessage, isMediaLoaded, onRequestMediaLoad)}
-              <FooterContainer $sender={sender}>
-                <Timestamp $sender={sender}>{msg.edited && <span>(edited) </span>}{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
-              </FooterContainer>
-            </>
-          )}
-          {msg.reactions && Object.keys(msg.reactions).length > 0 && (() => {
-            const totalReactions = Object.values(msg.reactions).flat().length;
-            const uniqueEmojis = Object.keys(msg.reactions);
-            return (
-              <ReactionsContainer $sender={sender} onClick={(e) => setReactionsPopup({ messageId: msg.id, reactions: msg.reactions!, rect: e.currentTarget.getBoundingClientRect() })}> 
-                {uniqueEmojis.slice(0, 3).map(emoji => <ReactionEmojiSpan key={emoji}>{emoji}</ReactionEmojiSpan>)}
-                <ReactionCountSpan>{totalReactions}</ReactionCountSpan>
-              </ReactionsContainer>
-            );
-          })()}
-        </MessageBubble>
-      </div>
-    </MessageRow>
-    {activeDeleteMenu === msg.id && menuPos && createPortal(
-      <div
-        ref={deleteMenuRef}
-        style={{
-          position: 'fixed',
-          ...(menuPos.top !== undefined ? { top: menuPos.top } : { bottom: menuPos.bottom }),
-          ...(menuPos.left !== undefined ? { left: menuPos.left } : { right: menuPos.right }),
-          zIndex: 9999,
-        }}
-      >
-        <DeleteMenu>
-          {msg.isDeleted ? (
-            <DeleteMenuItem onClick={() => { handleToggleSelectMessage(msg.id); setActiveDeleteMenu(null); }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-              Delete
-            </DeleteMenuItem>
-          ) : (
-            <>
-              {canEdit && (
-                <DeleteMenuItem onClick={() => handleStartEdit(msg)}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                  Edit
-                </DeleteMenuItem>
-              )}
-              {msg.type !== 'video' && msg.type !== 'file' && (msg.text || msg.url) &&
-                <DeleteMenuItem onClick={() => { handleCopy(msg); setActiveDeleteMenu(null); }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                  Copy
-                </DeleteMenuItem>
-              }
-              {msg.userId !== currentUserId && (
-                <DeleteMenuItem onClick={() => { handleOpenReport(msg); setActiveDeleteMenu(null); }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                  Report user
-                </DeleteMenuItem>
-              )}
+            )}
+            {msg.reactions && Object.keys(msg.reactions).length > 0 && (() => {
+              const totalReactions = Object.values(msg.reactions).flat().length;
+              const uniqueEmojis = Object.keys(msg.reactions);
+              return (
+                <ReactionsContainer $sender={sender} onClick={(e) => setReactionsPopup({ messageId: msg.id, reactions: msg.reactions!, rect: e.currentTarget.getBoundingClientRect() })}>
+                  {uniqueEmojis.slice(0, 3).map(emoji => <ReactionEmojiSpan key={emoji}>{emoji}</ReactionEmojiSpan>)}
+                  <ReactionCountSpan>{totalReactions}</ReactionCountSpan>
+                </ReactionsContainer>
+              );
+            })()}
+          </MessageBubble>
+        </div>
+      </MessageRow>
+      {activeDeleteMenu === msg.id && menuPos && createPortal(
+        <div
+          ref={deleteMenuRef}
+          style={{
+            position: 'fixed',
+            ...(menuPos.top !== undefined ? { top: menuPos.top } : { bottom: menuPos.bottom }),
+            ...(menuPos.left !== undefined ? { left: menuPos.left } : { right: menuPos.right }),
+            zIndex: 9999,
+          }}
+        >
+          <DeleteMenu>
+            {msg.isDeleted ? (
               <DeleteMenuItem onClick={() => { handleToggleSelectMessage(msg.id); setActiveDeleteMenu(null); }}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                 Delete
               </DeleteMenuItem>
-            </>
-          )}
-        </DeleteMenu>
-      </div>,
-      document.body
-    )}
+            ) : (
+              <>
+                {canEdit && (
+                  <DeleteMenuItem onClick={() => handleStartEdit(msg)}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    Edit
+                  </DeleteMenuItem>
+                )}
+                {msg.type !== 'video' && msg.type !== 'file' && (msg.text || msg.url) &&
+                  <DeleteMenuItem onClick={() => { handleCopy(msg); setActiveDeleteMenu(null); }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    Copy
+                  </DeleteMenuItem>
+                }
+                {msg.userId !== currentUserId && (
+                  <DeleteMenuItem onClick={() => { handleOpenReport(msg); setActiveDeleteMenu(null); }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                    Report user
+                  </DeleteMenuItem>
+                )}
+                <DeleteMenuItem onClick={() => { handleToggleSelectMessage(msg.id); setActiveDeleteMenu(null); }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                  Delete
+                </DeleteMenuItem>
+              </>
+            )}
+          </DeleteMenu>
+        </div>,
+        document.body
+      )}
     </React.Fragment>
   );
 });
@@ -4215,7 +4770,7 @@ function Chat() {
     handleViewportResize();
     window.visualViewport?.addEventListener('resize', handleViewportResize);
     window.addEventListener('resize', handleViewportResize);
-    
+
     return () => {
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
       window.removeEventListener('resize', handleViewportResize);
@@ -4594,7 +5149,7 @@ function Chat() {
       if (document.activeElement instanceof HTMLVideoElement) {
         document.activeElement.blur();
       }
-      
+
       // Let Virtuoso's ResizeObserver natively maintain scroll position.
       // Removed custom double-rAF manual scroll logic which fought Virtuoso.
     };
@@ -4725,12 +5280,12 @@ function Chat() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-  
+
   // --- FUNCTIONS ---
-  
+
   const normalizeMessage = useCallback((msg: any): Message => {
     if (msg.reactions) {
-      const normalizedReactions: Record<string, {userId: string; username: string}[]> = {};
+      const normalizedReactions: Record<string, { userId: string; username: string }[]> = {};
       // Handle both plain objects and Map instances (Mongoose .lean() may return Maps)
       const entries: [string, any][] = msg.reactions instanceof Map
         ? Array.from(msg.reactions.entries())
@@ -4916,7 +5471,7 @@ function Chat() {
       setMessages(prev => [...prev, message]);
       // Ensure the view scrolls to show the newly added message
       requestAnimationFrame(() => scrollToBottom());
-      
+
       const formData = new FormData();
       formData.append('file', stagedFile);
       formData.append('text', inputMessage);
@@ -5020,7 +5575,7 @@ function Chat() {
     // shortly after, which will reconcile any difference.
     setMessages(prev => prev.map(m => {
       if (m.id !== messageId) return m;
-      const reactions: Record<string, {userId: string; username: string}[]> = m.reactions
+      const reactions: Record<string, { userId: string; username: string }[]> = m.reactions
         ? JSON.parse(JSON.stringify(m.reactions))
         : {};
       // Remove any existing reaction by this user
@@ -5069,7 +5624,7 @@ function Chat() {
       return { messageId, rect, sender };
     });
   }, []);
-  
+
   const reactionPickerRef = useRef<HTMLDivElement>(null!);
 
   // Close reaction picker when clicking/tapping outside
@@ -5442,7 +5997,7 @@ function Chat() {
     }
     setIsDeleteConfirmationVisible(true);
   };
-  
+
   const handleToggleSelectMessage = useCallback((messageId: string) => {
     setSelectedMessages(prevSelected => {
       const newSelected = prevSelected.includes(messageId)
@@ -5458,7 +6013,7 @@ function Chat() {
           overlayGuardPushed.current = true;
         }
       }
-      
+
       return newSelected;
     });
   }, []);
@@ -5518,135 +6073,135 @@ function Chat() {
     setSelectedMessages([]);
   };
 
-    const handleCopy = useCallback(async (message: Message) => {
-      try {
-        if (message.type === 'image' && message.url) {
-          // Copy the actual image to the clipboard.
-          // The ClipboardItem constructor accepts a *Promise* for the blob value,
-          // so clipboard.write() itself stays synchronous within the user-gesture
-          // frame (critical for iOS/Android) while the fetch happens in the background.
-          const url = sanitizeMediaUrl(message.url);
-          if (url && navigator.clipboard.write) {
-            const blobPromise = fetch(url)
-              .then(res => res.blob())
-              .then(blob => {
-                // Clipboard API requires image/png on most browsers.
-                // If the source is already PNG, use it directly.
-                if (blob.type === 'image/png') return blob;
-                // Otherwise convert via an offscreen canvas.
-                return new Promise<Blob>((resolve, reject) => {
-                  const img = new Image();
-                  img.crossOrigin = 'anonymous';
-                  img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.naturalWidth;
-                    canvas.height = img.naturalHeight;
-                    canvas.getContext('2d')!.drawImage(img, 0, 0);
-                    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
-                    URL.revokeObjectURL(img.src);
-                  };
-                  img.onerror = () => reject(new Error('Image load failed'));
-                  img.src = URL.createObjectURL(blob);
-                });
+  const handleCopy = useCallback(async (message: Message) => {
+    try {
+      if (message.type === 'image' && message.url) {
+        // Copy the actual image to the clipboard.
+        // The ClipboardItem constructor accepts a *Promise* for the blob value,
+        // so clipboard.write() itself stays synchronous within the user-gesture
+        // frame (critical for iOS/Android) while the fetch happens in the background.
+        const url = sanitizeMediaUrl(message.url);
+        if (url && navigator.clipboard.write) {
+          const blobPromise = fetch(url)
+            .then(res => res.blob())
+            .then(blob => {
+              // Clipboard API requires image/png on most browsers.
+              // If the source is already PNG, use it directly.
+              if (blob.type === 'image/png') return blob;
+              // Otherwise convert via an offscreen canvas.
+              return new Promise<Blob>((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = img.naturalWidth;
+                  canvas.height = img.naturalHeight;
+                  canvas.getContext('2d')!.drawImage(img, 0, 0);
+                  canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), 'image/png');
+                  URL.revokeObjectURL(img.src);
+                };
+                img.onerror = () => reject(new Error('Image load failed'));
+                img.src = URL.createObjectURL(blob);
               });
-            const item = new ClipboardItem({ 'image/png': blobPromise });
-            await navigator.clipboard.write([item]);
-            return;
-          }
+            });
+          const item = new ClipboardItem({ 'image/png': blobPromise });
+          await navigator.clipboard.write([item]);
+          return;
         }
-        // Fallback: copy text content (for text messages, or if image copy isn't supported).
-        const textToCopy = message.text || message.url || '';
-        if (textToCopy) {
-          await navigator.clipboard.writeText(textToCopy);
+      }
+      // Fallback: copy text content (for text messages, or if image copy isn't supported).
+      const textToCopy = message.text || message.url || '';
+      if (textToCopy) {
+        await navigator.clipboard.writeText(textToCopy);
+      }
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      // Last-resort fallback: try copying as text.
+      try {
+        const fallbackText = message.text || message.url || '';
+        if (fallbackText) await navigator.clipboard.writeText(fallbackText);
+      } catch { /* silently fail */ }
+    }
+  }, []);
+
+  const handleStartEdit = useCallback((message: Message) => {
+    setEditingMessageId(message.id);
+    setEditingText(message.text || '');
+    setActiveDeleteMenu(null);
+  }, []);
+
+  const handleOpenReport = useCallback((message: Message) => {
+    if (!message || message.userId === userIdRef.current || message.isDeleted || message.type === 'system_notification') {
+      return;
+    }
+    setActiveDeleteMenu(null);
+    setReportTargetMessage(message);
+    setReportReason('');
+    setReportError('');
+    setIsSubmittingReport(false);
+    setIsReportModalVisible(true);
+  }, []);
+
+  const handleCloseReportModal = useCallback(() => {
+    setIsReportModalVisible(false);
+    setIsSubmittingReport(false);
+    setReportError('');
+    setReportReason('');
+    setReportTargetMessage(null);
+  }, []);
+
+  const handleSubmitReport = useCallback(() => {
+    if (!reportTargetMessage || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      setReportError('Unable to submit report right now. Please try again.');
+      return;
+    }
+
+    const normalizedReason = reportReason.replace(/\s+/g, ' ').trim();
+    if (normalizedReason.length < MIN_REPORT_REASON_LENGTH) {
+      setReportError(`Please enter at least ${MIN_REPORT_REASON_LENGTH} characters.`);
+      return;
+    }
+
+    if (normalizedReason.length > MAX_REPORT_REASON_LENGTH) {
+      setReportError(`Please keep the reason under ${MAX_REPORT_REASON_LENGTH} characters.`);
+      return;
+    }
+
+    setIsSubmittingReport(true);
+    setReportError('');
+
+    ws.current.send(JSON.stringify({
+      type: 'report_user',
+      reportedUserId: reportTargetMessage.userId,
+      reportedUsername: reportTargetMessage.username,
+      messageId: reportTargetMessage.id,
+      messageType: reportTargetMessage.type,
+      reason: normalizedReason,
+    }));
+  }, [reportReason, reportTargetMessage]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMessageId(null);
+    setEditingText('');
+  }, []);
+
+  const handleSaveEdit = useCallback(() => {
+    setEditingMessageId(currentId => {
+      setEditingText(currentText => {
+        if (!currentId || !currentText.trim()) {
+          // nothing to save – reset
+        } else if (ws.current) {
+          ws.current.send(JSON.stringify({
+            type: 'edit',
+            messageId: currentId,
+            newText: currentText,
+          }));
         }
-      } catch (err) {
-        console.error('Failed to copy: ', err);
-        // Last-resort fallback: try copying as text.
-        try {
-          const fallbackText = message.text || message.url || '';
-          if (fallbackText) await navigator.clipboard.writeText(fallbackText);
-        } catch { /* silently fail */ }
-      }
-    }, []);
-
-    const handleStartEdit = useCallback((message: Message) => {
-      setEditingMessageId(message.id);
-      setEditingText(message.text || '');
-      setActiveDeleteMenu(null);
-    }, []);
-
-    const handleOpenReport = useCallback((message: Message) => {
-      if (!message || message.userId === userIdRef.current || message.isDeleted || message.type === 'system_notification') {
-        return;
-      }
-      setActiveDeleteMenu(null);
-      setReportTargetMessage(message);
-      setReportReason('');
-      setReportError('');
-      setIsSubmittingReport(false);
-      setIsReportModalVisible(true);
-    }, []);
-
-    const handleCloseReportModal = useCallback(() => {
-      setIsReportModalVisible(false);
-      setIsSubmittingReport(false);
-      setReportError('');
-      setReportReason('');
-      setReportTargetMessage(null);
-    }, []);
-
-    const handleSubmitReport = useCallback(() => {
-      if (!reportTargetMessage || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
-        setReportError('Unable to submit report right now. Please try again.');
-        return;
-      }
-
-      const normalizedReason = reportReason.replace(/\s+/g, ' ').trim();
-      if (normalizedReason.length < MIN_REPORT_REASON_LENGTH) {
-        setReportError(`Please enter at least ${MIN_REPORT_REASON_LENGTH} characters.`);
-        return;
-      }
-
-      if (normalizedReason.length > MAX_REPORT_REASON_LENGTH) {
-        setReportError(`Please keep the reason under ${MAX_REPORT_REASON_LENGTH} characters.`);
-        return;
-      }
-
-      setIsSubmittingReport(true);
-      setReportError('');
-
-      ws.current.send(JSON.stringify({
-        type: 'report_user',
-        reportedUserId: reportTargetMessage.userId,
-        reportedUsername: reportTargetMessage.username,
-        messageId: reportTargetMessage.id,
-        messageType: reportTargetMessage.type,
-        reason: normalizedReason,
-      }));
-    }, [reportReason, reportTargetMessage]);
-
-    const handleCancelEdit = useCallback(() => {
-      setEditingMessageId(null);
-      setEditingText('');
-    }, []);
-
-    const handleSaveEdit = useCallback(() => {
-      setEditingMessageId(currentId => {
-        setEditingText(currentText => {
-          if (!currentId || !currentText.trim()) {
-            // nothing to save – reset
-          } else if (ws.current) {
-            ws.current.send(JSON.stringify({
-              type: 'edit',
-              messageId: currentId,
-              newText: currentText,
-            }));
-          }
-          return '';
-        });
-        return null;
+        return '';
       });
-    }, []);
+      return null;
+    });
+  }, []);
 
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     isAtBottomRef.current = atBottom;
@@ -5797,7 +6352,7 @@ function Chat() {
       });
     })();
   }, [fetchAndPrependOlderMessages, historyLoaded, scrollToLoadedMessage]);
-  
+
   const scrollToBottom = useCallback(() => {
     if (virtuosoRef.current) {
       // Use an outrageously large index to guarantee anchoring to the end,
@@ -5896,8 +6451,8 @@ function Chat() {
     : 'Scroll to latest messages';
   const virtuosoOverscan = isMobileView ? VIRTUOSO_OVERSCAN_MOBILE : VIRTUOSO_OVERSCAN_DESKTOP;
   const virtuosoIncreaseViewportBy = isMobileView ? VIRTUOSO_VIEWPORT_BY_MOBILE : VIRTUOSO_VIEWPORT_BY_DESKTOP;
- 
-  
+
+
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       // On touchscreen devices (mobile/tablet) the on-screen keyboard's
@@ -6036,9 +6591,9 @@ function Chat() {
         <DragDropCard>
           <DragDropIconWrapper>
             <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="16 16 12 12 8 16"/>
-              <line x1="12" y1="12" x2="12" y2="21"/>
-              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+              <polyline points="16 16 12 12 8 16" />
+              <line x1="12" y1="12" x2="12" y2="21" />
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3" />
             </svg>
           </DragDropIconWrapper>
           <DragDropTitle>Drop your file here</DragDropTitle>
@@ -6057,7 +6612,7 @@ function Chat() {
           <FilePreviewModal>
             <FilePreviewModalHeader>
               <FilePreviewModalClose aria-label="Close preview" onClick={() => { setShowFilePreview(false); setStagedFiles([]); setPreviewCaption(''); setPreviewActiveIndex(0); }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </FilePreviewModalClose>
               <FilePreviewModalFilename>{activeFile?.name}</FilePreviewModalFilename>
             </FilePreviewModalHeader>
@@ -6069,8 +6624,8 @@ function Chat() {
               ) : (
                 <FilePreviewNoPreview>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
                   </svg>
                   <p>No preview available</p>
                   <span>{sizeLabel} — {ext}</span>
@@ -6086,7 +6641,7 @@ function Chat() {
                     <div key={idx} style={{ position: 'relative', flexShrink: 0 }}>
                       <FilePreviewThumb $active={idx === previewActiveIndex} onClick={() => setPreviewActiveIndex(idx)}>
                         {tIsImg ? <img src={sanitizeMediaUrl(getBlobUrl(f))} alt="" /> : tIsVid ? <video src={sanitizeMediaUrl(getBlobUrl(f))} /> : (
-                          <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                          <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                         )}
                       </FilePreviewThumb>
                       <FilePreviewRemoveBtn onClick={(e) => { e.stopPropagation(); setStagedFiles(prev => { const next = prev.filter((_, i) => i !== idx); if (next.length === 0) { setShowFilePreview(false); setPreviewCaption(''); setPreviewActiveIndex(0); } else if (previewActiveIndex >= next.length) { setPreviewActiveIndex(next.length - 1); } return next; }); }}>&times;</FilePreviewRemoveBtn>
@@ -6094,14 +6649,14 @@ function Chat() {
                   );
                 })}
                 <FilePreviewAddBtn onClick={() => addFileInputRef.current?.click()}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </FilePreviewAddBtn>
               </FilePreviewThumbStrip>
             )}
             {stagedFiles.length === 1 && (
               <FilePreviewThumbStrip>
                 <FilePreviewAddBtn onClick={() => addFileInputRef.current?.click()}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </FilePreviewAddBtn>
               </FilePreviewThumbStrip>
             )}
@@ -6113,7 +6668,7 @@ function Chat() {
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendFromPreview(); } }}
               />
               <FilePreviewSendBtn onClick={handleSendFromPreview}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
               </FilePreviewSendBtn>
             </FilePreviewModalFooter>
           </FilePreviewModal>
@@ -6143,63 +6698,63 @@ function Chat() {
       )}
       {fullEmojiPickerPosition && (
         <>
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 99, background: 'rgba(0,0,0,0.3)' }}
-          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setFullEmojiPickerPosition(null); messageIdForFullEmojiPickerRef.current = null; }}
-        />
-        {isMobileView ? (
-          <MobileEmojiPanel>
-            <EmojiPicker
-              onEmojiClick={(emojiData) => {
-                const msgId = messageIdForFullEmojiPickerRef.current;
-                setFullEmojiPickerPosition(null);
-                messageIdForFullEmojiPickerRef.current = null;
-                // Cancel select mode here (not in the + button handler) so the
-                // MobileReactionPicker stays mounted while the panel is open,
-                // keeping target.closest('.mobile-reaction-picker') reliable.
-                handleCancelSelectMode();
-                if (msgId) {
-                  handleReact(msgId, emojiData.emoji);
-                }
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 99, background: 'rgba(0,0,0,0.3)' }}
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setFullEmojiPickerPosition(null); messageIdForFullEmojiPickerRef.current = null; }}
+          />
+          {isMobileView ? (
+            <MobileEmojiPanel>
+              <EmojiPicker
+                onEmojiClick={(emojiData) => {
+                  const msgId = messageIdForFullEmojiPickerRef.current;
+                  setFullEmojiPickerPosition(null);
+                  messageIdForFullEmojiPickerRef.current = null;
+                  // Cancel select mode here (not in the + button handler) so the
+                  // MobileReactionPicker stays mounted while the panel is open,
+                  // keeping target.closest('.mobile-reaction-picker') reliable.
+                  handleCancelSelectMode();
+                  if (msgId) {
+                    handleReact(msgId, emojiData.emoji);
+                  }
+                }}
+                theme={isDark ? Theme.DARK : Theme.LIGHT}
+                emojiStyle={EmojiStyle.NATIVE}
+                autoFocusSearch={false}
+                width="100%"
+                lazyLoadEmojis={false}
+              />
+            </MobileEmojiPanel>
+          ) : (
+            <EmojiPickerWrapper
+              ref={fullEmojiPickerRef}
+              style={{
+                position: 'fixed',
+                bottom: '10px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 100,
               }}
-              theme={isDark ? Theme.DARK : Theme.LIGHT}
-              emojiStyle={EmojiStyle.NATIVE}
-              autoFocusSearch={false}
-              width="100%"
-              lazyLoadEmojis={false}
-            />
-          </MobileEmojiPanel>
-        ) : (
-          <EmojiPickerWrapper
-            ref={fullEmojiPickerRef}
-            style={{
-              position: 'fixed',
-              bottom: '10px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 100,
-            }}
-          >
-            <EmojiPicker
-              onEmojiClick={(emojiData) => {
-                const msgId = messageIdForFullEmojiPickerRef.current;
-                setFullEmojiPickerPosition(null);
-                messageIdForFullEmojiPickerRef.current = null;
-                handleCancelSelectMode();
-                if (msgId) {
-                  handleReact(msgId, emojiData.emoji);
-                }
-              }}
-              theme={isDark ? Theme.DARK : Theme.LIGHT}
-              emojiStyle={EmojiStyle.NATIVE}
-              autoFocusSearch={false}
-              lazyLoadEmojis={false}
-            />
-          </EmojiPickerWrapper>
-        )}
+            >
+              <EmojiPicker
+                onEmojiClick={(emojiData) => {
+                  const msgId = messageIdForFullEmojiPickerRef.current;
+                  setFullEmojiPickerPosition(null);
+                  messageIdForFullEmojiPickerRef.current = null;
+                  handleCancelSelectMode();
+                  if (msgId) {
+                    handleReact(msgId, emojiData.emoji);
+                  }
+                }}
+                theme={isDark ? Theme.DARK : Theme.LIGHT}
+                emojiStyle={EmojiStyle.NATIVE}
+                autoFocusSearch={false}
+                lazyLoadEmojis={false}
+              />
+            </EmojiPickerWrapper>
+          )}
         </>
       )}
-       {reactionPickerData && (
+      {reactionPickerData && (
         <ReactionPicker
           ref={reactionPickerRef}
           $sender={reactionPickerData.sender}
@@ -6235,8 +6790,8 @@ function Chat() {
         </ReactionPicker>
       )}
 
-        {reactionsPopup && (
-        <ReactionsPopup 
+      {reactionsPopup && (
+        <ReactionsPopup
           popupData={reactionsPopup}
           currentUserId={userIdRef.current}
           onClose={() => setReactionsPopup(null)}
@@ -6254,9 +6809,9 @@ function Chat() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <ThemeToggleBtn onClick={toggleTheme} title={isDark ? 'Switch to light mode' : 'Switch to dark mode'} aria-label="Toggle theme">
               {isDark ? (
-                <svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
               ) : (
-                <svg viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
               )}
             </ThemeToggleBtn>
             <MobileUserListToggle
@@ -6272,109 +6827,109 @@ function Chat() {
         <LayoutContainer>
           <ChatWindow>
             <MessagesAndScrollWrapper>
-            <MessagesContainer ref={chatContainerRef} onClick={handleChatAreaClick} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
-              {historyLoaded ? (
-               <Virtuoso
-                 ref={virtuosoRef}
-                 firstItemIndex={firstItemIndex}
-                 data={messages}
-                 initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
-                 startReached={loadOlderMessages}
-                 followOutput={virtuosoFollowOutput}
-                 atBottomStateChange={handleAtBottomStateChange}
-                 atBottomThreshold={20}
-                 defaultItemHeight={88}
-                 increaseViewportBy={virtuosoIncreaseViewportBy}
-                 overscan={virtuosoOverscan}
-                 computeItemKey={(index: number, msg: Message) => msg.id || index}
-                 style={{ flex: 1, overflow: 'auto' }}
-                 components={{
-                   Header: () => isLoadingOlderMessages
-                     ? <div style={{ textAlign: 'center', padding: '0.45rem 0', fontSize: '0.78rem', opacity: 0.8 }}>Loading older messages...</div>
-                     : (!hasMoreOlderMessages && messages.length > 0
-                       ? <div style={{ textAlign: 'center', padding: '0.45rem 0', fontSize: '0.74rem', opacity: 0.65 }}>Start of chat history</div>
-                       : null),
-                   Footer: () => <div style={{ height: '12px' }} />,
-                 }}
-                 itemContent={(index: number, msg: Message) => {
-                          if (msg.type === 'system_notification') {
-                            return (
-                              <div style={{ display: 'flex', justifyContent: 'center', padding: '0.4rem 0' }}>
-                                <SystemMessage>{msg.text}</SystemMessage>
-                              </div>
-                            );
-                          }
-                          // With Virtuoso + firstItemIndex, `index` is an absolute virtual index.
-                          // Convert it to data-array index before looking at neighbors.
-                          const dataIndex = index - firstItemIndex;
-                          const prevMsg = dataIndex > 0 ? messages[dataIndex - 1] : null;
-                          const currentSenderId = (msg.userId || '').trim();
-                          const prevSenderId = (prevMsg?.userId || '').trim();
-                          const currentSenderName = (msg.username || '').trim().toLowerCase();
-                          const prevSenderName = (prevMsg?.username || '').trim().toLowerCase();
-                          const isSameSender = Boolean(prevMsg) && (
-                            (Boolean(currentSenderId) && Boolean(prevSenderId) && currentSenderId === prevSenderId) ||
-                            (Boolean(currentSenderName) && Boolean(prevSenderName) && currentSenderName === prevSenderName)
-                          );
-                          const isSeriesContinuation = Boolean(prevMsg) && prevMsg!.type !== 'system_notification' && isSameSender;
-                          const showUsername = !isSeriesContinuation;
-                          return (
-                            <MessageItem
-                              msg={msg}
-                              showUsername={showUsername}
-                              currentUserId={userIdRef.current}
-                              handleSetReply={handleSetReply}
-                              handleReact={handleReact}
-                              openDeleteMenu={handleOpenDeleteMenu}
-                              openLightbox={openLightbox}
-                              isMediaLoaded={loadedMediaMessageSet.has(msg.id)}
-                              onRequestMediaLoad={handleRequestMediaLoad}
-                              activeDeleteMenu={activeDeleteMenu}
-                              deleteMenuRef={deleteMenuRef}
-                              deleteForMe={deleteForMe}
-                              deleteForEveryone={deleteForEveryone}
-                              scrollToMessage={scrollToMessage}
-                              isSelectModeActive={isSelectModeActive}
-                              isSelected={selectedMessageIds.has(msg.id)}
-                              handleToggleSelectMessage={handleToggleSelectMessage}
-                              setActiveDeleteMenu={setActiveDeleteMenu}
-                              handleCopy={handleCopy}
-                              handleOpenReport={handleOpenReport}
-                              handleStartEdit={handleStartEdit}
-                              handleCancelSelectMode={handleCancelSelectMode}
-                              isMobileView={isMobileView}
-                              selectedMessages={selectedMessages}
-                              onOpenReactionPicker={handleOpenReactionPicker}
-                              setReactionsPopup={setReactionsPopup}
-                              handleOpenFullEmojiPicker={handleOpenFullEmojiPicker}
-                              reactionPickerData={reactionPickerData}
-                              editingMessageId={editingMessageId}
-                              editingText={editingText}
-                              setEditingText={setEditingText}
-                              handleSaveEdit={handleSaveEdit}
-                              handleCancelEdit={handleCancelEdit}
-                              onVideoFullscreenEnter={handleVideoFullscreenEnter}
-                            />
-                          );
-                 }}
-               />
-              ) : null}
-            </MessagesContainer>
-            <ScrollToBottomButton
-              $isVisible={isScrollToBottomVisible}
-              onClick={handleScrollToBottomButtonClick}
-              onMouseDown={(e) => e.preventDefault()}
-              onPointerDown={(e) => e.preventDefault()}
-              onTouchStart={(e) => e.preventDefault()}
-              aria-label={scrollToLatestLabel}
-              title={scrollToLatestTitle}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 5v14"></path>
-                <path d="m19 12-7 7-7-7"></path>
-              </svg>
-              <NewMessagesBadge $isVisible={hasNewMessagesIndicator}>{newMessagesIndicatorLabel}</NewMessagesBadge>
-            </ScrollToBottomButton>
+              <MessagesContainer ref={chatContainerRef} onClick={handleChatAreaClick} $isScrollButtonVisible={isScrollToBottomVisible} $isMobileView={isMobileView}>
+                {historyLoaded ? (
+                  <Virtuoso
+                    ref={virtuosoRef}
+                    firstItemIndex={firstItemIndex}
+                    data={messages}
+                    initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
+                    startReached={loadOlderMessages}
+                    followOutput={virtuosoFollowOutput}
+                    atBottomStateChange={handleAtBottomStateChange}
+                    atBottomThreshold={20}
+                    defaultItemHeight={88}
+                    increaseViewportBy={virtuosoIncreaseViewportBy}
+                    overscan={virtuosoOverscan}
+                    computeItemKey={(index: number, msg: Message) => msg.id || index}
+                    style={{ flex: 1, overflow: 'auto' }}
+                    components={{
+                      Header: () => isLoadingOlderMessages
+                        ? <div style={{ textAlign: 'center', padding: '0.45rem 0', fontSize: '0.78rem', opacity: 0.8 }}>Loading older messages...</div>
+                        : (!hasMoreOlderMessages && messages.length > 0
+                          ? <div style={{ textAlign: 'center', padding: '0.45rem 0', fontSize: '0.74rem', opacity: 0.65 }}>Start of chat history</div>
+                          : null),
+                      Footer: () => <div style={{ height: '12px' }} />,
+                    }}
+                    itemContent={(index: number, msg: Message) => {
+                      if (msg.type === 'system_notification') {
+                        return (
+                          <div style={{ display: 'flex', justifyContent: 'center', padding: '0.4rem 0' }}>
+                            <SystemMessage>{msg.text}</SystemMessage>
+                          </div>
+                        );
+                      }
+                      // With Virtuoso + firstItemIndex, `index` is an absolute virtual index.
+                      // Convert it to data-array index before looking at neighbors.
+                      const dataIndex = index - firstItemIndex;
+                      const prevMsg = dataIndex > 0 ? messages[dataIndex - 1] : null;
+                      const currentSenderId = (msg.userId || '').trim();
+                      const prevSenderId = (prevMsg?.userId || '').trim();
+                      const currentSenderName = (msg.username || '').trim().toLowerCase();
+                      const prevSenderName = (prevMsg?.username || '').trim().toLowerCase();
+                      const isSameSender = Boolean(prevMsg) && (
+                        (Boolean(currentSenderId) && Boolean(prevSenderId) && currentSenderId === prevSenderId) ||
+                        (Boolean(currentSenderName) && Boolean(prevSenderName) && currentSenderName === prevSenderName)
+                      );
+                      const isSeriesContinuation = Boolean(prevMsg) && prevMsg!.type !== 'system_notification' && isSameSender;
+                      const showUsername = !isSeriesContinuation;
+                      return (
+                        <MessageItem
+                          msg={msg}
+                          showUsername={showUsername}
+                          currentUserId={userIdRef.current}
+                          handleSetReply={handleSetReply}
+                          handleReact={handleReact}
+                          openDeleteMenu={handleOpenDeleteMenu}
+                          openLightbox={openLightbox}
+                          isMediaLoaded={loadedMediaMessageSet.has(msg.id)}
+                          onRequestMediaLoad={handleRequestMediaLoad}
+                          activeDeleteMenu={activeDeleteMenu}
+                          deleteMenuRef={deleteMenuRef}
+                          deleteForMe={deleteForMe}
+                          deleteForEveryone={deleteForEveryone}
+                          scrollToMessage={scrollToMessage}
+                          isSelectModeActive={isSelectModeActive}
+                          isSelected={selectedMessageIds.has(msg.id)}
+                          handleToggleSelectMessage={handleToggleSelectMessage}
+                          setActiveDeleteMenu={setActiveDeleteMenu}
+                          handleCopy={handleCopy}
+                          handleOpenReport={handleOpenReport}
+                          handleStartEdit={handleStartEdit}
+                          handleCancelSelectMode={handleCancelSelectMode}
+                          isMobileView={isMobileView}
+                          selectedMessages={selectedMessages}
+                          onOpenReactionPicker={handleOpenReactionPicker}
+                          setReactionsPopup={setReactionsPopup}
+                          handleOpenFullEmojiPicker={handleOpenFullEmojiPicker}
+                          reactionPickerData={reactionPickerData}
+                          editingMessageId={editingMessageId}
+                          editingText={editingText}
+                          setEditingText={setEditingText}
+                          handleSaveEdit={handleSaveEdit}
+                          handleCancelEdit={handleCancelEdit}
+                          onVideoFullscreenEnter={handleVideoFullscreenEnter}
+                        />
+                      );
+                    }}
+                  />
+                ) : null}
+              </MessagesContainer>
+              <ScrollToBottomButton
+                $isVisible={isScrollToBottomVisible}
+                onClick={handleScrollToBottomButtonClick}
+                onMouseDown={(e) => e.preventDefault()}
+                onPointerDown={(e) => e.preventDefault()}
+                onTouchStart={(e) => e.preventDefault()}
+                aria-label={scrollToLatestLabel}
+                title={scrollToLatestTitle}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 5v14"></path>
+                  <path d="m19 12-7 7-7-7"></path>
+                </svg>
+                <NewMessagesBadge $isVisible={hasNewMessagesIndicator}>{newMessagesIndicatorLabel}</NewMessagesBadge>
+              </ScrollToBottomButton>
             </MessagesAndScrollWrapper>
             <TypingIndicator onlineUsers={onlineUsers} currentUserId={userIdRef.current} />
             <Footer>
@@ -6384,24 +6939,24 @@ function Chat() {
                   <span>{selectedMessages.length} selected</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     {canEditSelectedMessage && (
-                      <EditButton onClick={() => { if (selectedMessage) { handleStartEdit(selectedMessage); } handleCancelSelectMode();}} title="Edit" aria-label="Edit selected message" >
-                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                      <EditButton onClick={() => { if (selectedMessage) { handleStartEdit(selectedMessage); } handleCancelSelectMode(); }} title="Edit" aria-label="Edit selected message" >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                       </EditButton>
                     )}
-                      {isMobileView && selectedMessages.length === 1 && selectedMessage && !selectedMessage.isDeleted && (selectedMessage.type === 'text' || selectedMessage.type === 'image') && (
-                       <CopyButton onClick={() => { handleCopy(selectedMessage); handleCancelSelectMode(); }} title="Copy" aria-label="Copy selected message" >
-                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                       </CopyButton>
-                      )}
-                      {isMobileView && selectedMessages.length === 1 && selectedMessage && !selectedMessage.isDeleted && selectedMessage.userId !== userIdRef.current && selectedMessage.type !== 'system_notification' && (
-                        <ReportButton
-                          onClick={() => { handleOpenReport(selectedMessage); handleCancelSelectMode(); }}
-                          title="Report"
-                          aria-label="Report selected message"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18"></path><path d="M3 4h10l-1.5 3L13 10H3"></path></svg>
-                        </ReportButton>
-                      )}
+                    {isMobileView && selectedMessages.length === 1 && selectedMessage && !selectedMessage.isDeleted && (selectedMessage.type === 'text' || selectedMessage.type === 'image') && (
+                      <CopyButton onClick={() => { handleCopy(selectedMessage); handleCancelSelectMode(); }} title="Copy" aria-label="Copy selected message" >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      </CopyButton>
+                    )}
+                    {isMobileView && selectedMessages.length === 1 && selectedMessage && !selectedMessage.isDeleted && selectedMessage.userId !== userIdRef.current && selectedMessage.type !== 'system_notification' && (
+                      <ReportButton
+                        onClick={() => { handleOpenReport(selectedMessage); handleCancelSelectMode(); }}
+                        title="Report"
+                        aria-label="Report selected message"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18"></path><path d="M3 4h10l-1.5 3L13 10H3"></path></svg>
+                      </ReportButton>
+                    )}
                     <DeleteButton onClick={handleInitiateDelete} title="Delete" aria-label="Delete selected messages">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     </DeleteButton>
@@ -6410,162 +6965,162 @@ function Chat() {
               )}
               {!isSelectModeActive && (
                 <div>
-               {replyingTo && <ReplyPreviewContainer ref={replyPreviewRef} onClick={() => scrollToMessage(replyingTo.id)}>
-                {replyingTo.type === 'video' && replyingTo.url ? (
-                  <video src={replyingTo.url} style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }} />
-                ) : (replyingTo.type === 'image' || replyingTo.type === 'video') && replyingTo.url && (
-                  <FilePreviewImage src={replyingTo.url} alt="Reply preview" />
-                )}
-                <ReplyText><p>Replying to {replyingTo.username}</p><span>
-                  {(() => {
-                    if (replyingTo.text) return replyingTo.text;
-                    if (isTenorUrl(replyingTo.url)) return 'GIF';
-                    if (replyingTo.type === 'image') return 'Image';
-                    if (replyingTo.type === 'video') return 'Video';
-                    return 'Message';
-                  })()}
-                </span></ReplyText><CancelPreviewButton onClick={(e) => { e.stopPropagation(); setReplyingTo(null); }}>&times;</CancelPreviewButton></ReplyPreviewContainer>}
-              {stagedFile && !showFilePreview && (
-                <FilePreviewContainer>
-                  {stagedFile.type.startsWith('image/') ? (
-                    <FilePreviewImage src={URL.createObjectURL(stagedFile)} alt="Preview" />
-                  ) : stagedFile.type.startsWith('video/') ? (
-                    <video src={URL.createObjectURL(stagedFile)} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
-                  ) : (
-                    <div style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e2e8f0', borderRadius: '8px', flexShrink: 0 }}>
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5568" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
-                      </svg>
-                    </div>
+                  {replyingTo && <ReplyPreviewContainer ref={replyPreviewRef} onClick={() => scrollToMessage(replyingTo.id)}>
+                    {replyingTo.type === 'video' && replyingTo.url ? (
+                      <video src={replyingTo.url} style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }} />
+                    ) : (replyingTo.type === 'image' || replyingTo.type === 'video') && replyingTo.url && (
+                      <FilePreviewImage src={replyingTo.url} alt="Reply preview" />
+                    )}
+                    <ReplyText><p>Replying to {replyingTo.username}</p><span>
+                      {(() => {
+                        if (replyingTo.text) return replyingTo.text;
+                        if (isTenorUrl(replyingTo.url)) return 'GIF';
+                        if (replyingTo.type === 'image') return 'Image';
+                        if (replyingTo.type === 'video') return 'Video';
+                        return 'Message';
+                      })()}
+                    </span></ReplyText><CancelPreviewButton onClick={(e) => { e.stopPropagation(); setReplyingTo(null); }}>&times;</CancelPreviewButton></ReplyPreviewContainer>}
+                  {stagedFile && !showFilePreview && (
+                    <FilePreviewContainer>
+                      {stagedFile.type.startsWith('image/') ? (
+                        <FilePreviewImage src={URL.createObjectURL(stagedFile)} alt="Preview" />
+                      ) : stagedFile.type.startsWith('video/') ? (
+                        <video src={URL.createObjectURL(stagedFile)} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#e2e8f0', borderRadius: '8px', flexShrink: 0 }}>
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a5568" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                        </div>
+                      )}
+                      <FilePreviewInfo>{stagedFile.name}</FilePreviewInfo>
+                      <CancelPreviewButton onClick={() => setStagedFile(null)}>&times;</CancelPreviewButton>
+                    </FilePreviewContainer>
                   )}
-                  <FilePreviewInfo>{stagedFile.name}</FilePreviewInfo>
-                  <CancelPreviewButton onClick={() => setStagedFile(null)}>&times;</CancelPreviewButton>
-                </FilePreviewContainer>
-              )}
-              {stagedFiles.length > 0 && !showFilePreview && (
-                <FilePreviewContainer>
-                  <FilePreviewInfo>{stagedFiles.length} file{stagedFiles.length > 1 ? 's' : ''} ready</FilePreviewInfo>
-                  <CancelPreviewButton onClick={() => { setStagedFiles([]); setPreviewCaption(''); }}>&times;</CancelPreviewButton>
-                </FilePreviewContainer>
-              )}
-              {stagedGif && <FilePreviewContainer><FilePreviewImage src={stagedGif.preview} alt="GIF Preview" /><FilePreviewInfo>GIF</FilePreviewInfo><CancelPreviewButton onClick={() => setStagedGif(null)}>&times;</CancelPreviewButton></FilePreviewContainer>}
-               <InputContainer>
-                <div style={{ position: 'relative' }} ref={plusMenuRef}>
-                  <PlusMenuButton
-                    ref={plusButtonRef}
-                    $isOpen={isPlusMenuOpen}
-                    onPointerDown={(e) => e.preventDefault()}
-                    onClick={() => setIsPlusMenuOpen(prev => !prev)}
-                    aria-label="Open actions menu"
-                    title="Emoji, GIF, or File"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                  </PlusMenuButton>
-                  <PlusMenu $isVisible={isPlusMenuOpen}>
-                    <PlusMenuItem
-                      ref={emojiButtonRef}
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const inputWasFocused = Boolean(
-                          messageInputRef.current && document.activeElement === messageInputRef.current
+                  {stagedFiles.length > 0 && !showFilePreview && (
+                    <FilePreviewContainer>
+                      <FilePreviewInfo>{stagedFiles.length} file{stagedFiles.length > 1 ? 's' : ''} ready</FilePreviewInfo>
+                      <CancelPreviewButton onClick={() => { setStagedFiles([]); setPreviewCaption(''); }}>&times;</CancelPreviewButton>
+                    </FilePreviewContainer>
+                  )}
+                  {stagedGif && <FilePreviewContainer><FilePreviewImage src={stagedGif.preview} alt="GIF Preview" /><FilePreviewInfo>GIF</FilePreviewInfo><CancelPreviewButton onClick={() => setStagedGif(null)}>&times;</CancelPreviewButton></FilePreviewContainer>}
+                  <InputContainer>
+                    <div style={{ position: 'relative' }} ref={plusMenuRef}>
+                      <PlusMenuButton
+                        ref={plusButtonRef}
+                        $isOpen={isPlusMenuOpen}
+                        onPointerDown={(e) => e.preventDefault()}
+                        onClick={() => setIsPlusMenuOpen(prev => !prev)}
+                        aria-label="Open actions menu"
+                        title="Emoji, GIF, or File"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                      </PlusMenuButton>
+                      <PlusMenu $isVisible={isPlusMenuOpen}>
+                        <PlusMenuItem
+                          ref={emojiButtonRef}
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const inputWasFocused = Boolean(
+                              messageInputRef.current && document.activeElement === messageInputRef.current
+                            );
+                            keyboardWasOpenBeforeEmojiRef.current = inputWasFocused;
+                            if (inputWasFocused) {
+                              messageInputRef.current.blur();
+                            }
+                            handleOpenEmojiPicker(rect);
+                            setIsPlusMenuOpen(false);
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                          <span>Emoji</span>
+                        </PlusMenuItem>
+                        <PlusMenuItem
+                          onPointerDown={(e) => {
+                            e.preventDefault();
+                            if (messageInputRef.current && document.activeElement === messageInputRef.current) {
+                              keyboardWasOpenBeforeGifRef.current = true;
+                              messageInputRef.current.blur();
+                            } else {
+                              keyboardWasOpenBeforeGifRef.current = false;
+                            }
+                            gifPickerOpenedAtRef.current = Date.now();
+                            setShowGifPicker(true);
+                            setIsPlusMenuOpen(false);
+                          }}
+                        >
+                          <FilmIcon /> <span>GIF</span>
+                        </PlusMenuItem>
+                        <PlusMenuItem
+                          onClick={() => {
+                            fileInputRef.current?.click();
+                            setIsPlusMenuOpen(false);
+                          }}
+                        >
+                          <FileIcon /> <span>Send File</span>
+                        </PlusMenuItem>
+                      </PlusMenu>
+                    </div>
+                    <InputTextWrapper>
+                      {(() => {
+                        // Detect URL in current input — if found, render highlight overlay
+                        CANDIDATE_URL_RE.lastIndex = 0;
+                        const hasUrl = CANDIDATE_URL_RE.test(inputMessage);
+                        CANDIDATE_URL_RE.lastIndex = 0;
+                        return (
+                          <>
+                            {hasUrl && (
+                              <InputHighlightOverlay aria-hidden="true">
+                                {renderTextWithLinks(inputMessage, 'other')}
+                              </InputHighlightOverlay>
+                            )}
+                            <MessageInput
+                              $hasUrl={hasUrl}
+                              ref={messageInputRef}
+                              rows={1}
+                              placeholder={stagedFile || stagedGif ? 'Add a caption...' : 'Type your message...'}
+                              value={inputMessage}
+                              onChange={handleInputChange}
+                              onKeyDown={handleInputKeyDown}
+                              onPaste={handlePaste}
+                              maxLength={MAX_MESSAGE_LENGTH}
+                            />
+                          </>
                         );
-                        keyboardWasOpenBeforeEmojiRef.current = inputWasFocused;
-                        if (inputWasFocused) {
-                          messageInputRef.current.blur();
-                        }
-                        handleOpenEmojiPicker(rect);
-                        setIsPlusMenuOpen(false);
-                      }}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
-                      <span>Emoji</span>
-                    </PlusMenuItem>
-                    <PlusMenuItem
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        if (messageInputRef.current && document.activeElement === messageInputRef.current) {
-                          keyboardWasOpenBeforeGifRef.current = true;
-                          messageInputRef.current.blur();
-                        } else {
-                          keyboardWasOpenBeforeGifRef.current = false;
-                        }
-                        gifPickerOpenedAtRef.current = Date.now();
-                        setShowGifPicker(true);
-                        setIsPlusMenuOpen(false);
-                      }}
-                    >
-                      <FilmIcon /> <span>GIF</span>
-                    </PlusMenuItem>
-                    <PlusMenuItem
-                      onClick={() => {
-                        fileInputRef.current?.click();
-                        setIsPlusMenuOpen(false);
-                      }}
-                    >
-                      <FileIcon /> <span>Send File</span>
-                    </PlusMenuItem>
-                  </PlusMenu>
-                </div>
-                <InputTextWrapper>
-                  {(() => {
-                    // Detect URL in current input — if found, render highlight overlay
-                    CANDIDATE_URL_RE.lastIndex = 0;
-                    const hasUrl = CANDIDATE_URL_RE.test(inputMessage);
-                    CANDIDATE_URL_RE.lastIndex = 0;
-                    return (
-                      <>
-                        {hasUrl && (
-                          <InputHighlightOverlay aria-hidden="true">
-                            {renderTextWithLinks(inputMessage, 'other')}
-                          </InputHighlightOverlay>
-                        )}
-                        <MessageInput
-                          $hasUrl={hasUrl}
-                          ref={messageInputRef}
-                          rows={1}
-                          placeholder={stagedFile || stagedGif ? 'Add a caption...' : 'Type your message...'}
-                          value={inputMessage}
-                          onChange={handleInputChange}
-                          onKeyDown={handleInputKeyDown}
-                          onPaste={handlePaste}
-                          maxLength={MAX_MESSAGE_LENGTH}
-                        />
-                      </>
-                    );
-                  })()}
-                </InputTextWrapper>
-                {inputMessage.length >= MAX_MESSAGE_LENGTH - 200 && (
-                  <CharacterCounter $warning={inputMessage.length >= MAX_MESSAGE_LENGTH - 20}>
-                    {MAX_MESSAGE_LENGTH - inputMessage.length}
-                  </CharacterCounter>
-                )}
-                <SendButton onMouseDown={(e) => e.preventDefault()} onClick={handleSendMessage} disabled={(!inputMessage.trim() && !stagedFile && !stagedGif && stagedFiles.length === 0)}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></SendButton>
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
-                <input type="file" ref={addFileInputRef} onChange={(e) => { if (e.target.files) { setStagedFiles(prev => [...prev, ...Array.from(e.target.files!)]); } if (e.target) e.target.value = ''; }} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
-              </InputContainer>
-              {/* Mobile emoji picker for typing.
+                      })()}
+                    </InputTextWrapper>
+                    {inputMessage.length >= MAX_MESSAGE_LENGTH - 200 && (
+                      <CharacterCounter $warning={inputMessage.length >= MAX_MESSAGE_LENGTH - 20}>
+                        {MAX_MESSAGE_LENGTH - inputMessage.length}
+                      </CharacterCounter>
+                    )}
+                    <SendButton onMouseDown={(e) => e.preventDefault()} onClick={handleSendMessage} disabled={(!inputMessage.trim() && !stagedFile && !stagedGif && stagedFiles.length === 0)}><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></SendButton>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
+                    <input type="file" ref={addFileInputRef} onChange={(e) => { if (e.target.files) { setStagedFiles(prev => [...prev, ...Array.from(e.target.files!)]); } if (e.target) e.target.value = ''; }} style={{ display: 'none' }} accept="image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.txt,.html" multiple />
+                  </InputContainer>
+                  {/* Mobile emoji picker for typing.
                   Rendered here (inside the Footer's normal DOM flow) so the footer
                   grows to include the picker and the messages area shrinks to fit —
                   exactly like WhatsApp.  A fixed overlay would cover the input bar. */}
-              {isMobileView && emojiPickerPosition && (
-                <div ref={emojiPickerRef} style={{ width: '100%', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-primary)' }}>
-                  <EmojiPicker
-                    onEmojiClick={handleEmojiClick}
-                    autoFocusSearch={false}
-                    theme={isDark ? Theme.DARK : Theme.LIGHT}
-                    emojiStyle={EmojiStyle.NATIVE}
-                    width="100%"
-                    height="42vh"
-                    lazyLoadEmojis={false}
-                  />
+                  {isMobileView && emojiPickerPosition && (
+                    <div ref={emojiPickerRef} style={{ width: '100%', background: 'var(--bg-elevated)', borderTop: '1px solid var(--border-primary)' }}>
+                      <EmojiPicker
+                        onEmojiClick={handleEmojiClick}
+                        autoFocusSearch={false}
+                        theme={isDark ? Theme.DARK : Theme.LIGHT}
+                        emojiStyle={EmojiStyle.NATIVE}
+                        width="100%"
+                        height="42vh"
+                        lazyLoadEmojis={false}
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
-              </div>
               )}
             </Footer>
           </ChatWindow>
@@ -6577,7 +7132,7 @@ function Chat() {
                 const currentUser = onlineUsers.find(user => user.userId === userIdRef.current);
                 const otherUsers = onlineUsers.filter(user => user.userId !== userIdRef.current);
                 const sortedUsers = currentUser ? [currentUser, ...otherUsers] : otherUsers;
-                
+
                 return sortedUsers.map((user, index) => (
                   <UserListItem key={user.userId} index={index}>
                     {user.username}{user.userId === userIdRef.current ? ' (You)' : ''}
@@ -6585,10 +7140,10 @@ function Chat() {
                 ));
               })()}
             </UserList>
-              <ClearChatButton onClick={handleClearChat}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9l-6-6H5a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"></path><path d="M15 3v6h6"></path><path d="M9.5 12.5 14.5 17.5"></path><path d="m14.5 12.5-5 5"></path></svg>
-                Clear Chat
-              </ClearChatButton>
+            <ClearChatButton onClick={handleClearChat}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9l-6-6H5a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"></path><path d="M15 3v6h6"></path><path d="M9.5 12.5 14.5 17.5"></path><path d="m14.5 12.5-5 5"></path></svg>
+              Clear Chat
+            </ClearChatButton>
             <LogoutButton onClick={() => {
               // Send explicit logout to server so it removes us from loggedInUsers
               if (ws.current && ws.current.readyState === WebSocket.OPEN) {
@@ -6606,7 +7161,7 @@ function Chat() {
           </UserSidebar>
         </LayoutContainer>
       </AppContainer>
-      
+
       {isDeleteConfirmationVisible && (
         <ConfirmationModal>
           <ConfirmationContent>
@@ -6730,7 +7285,7 @@ function Chat() {
           </LightboxFrame>
         </Lightbox>
       )}
-       {showGifPicker && (
+      {showGifPicker && (
         <GifPickerModal onClick={() => {
           // Ignore clicks that arrive within 500 ms of opening — these are the phantom
           // synthetic click events that mobile browsers generate after a pointerdown,
@@ -6740,7 +7295,7 @@ function Chat() {
         }}>
           <GifPickerContent ref={gifPickerRef} onClick={(e) => e.stopPropagation()}>
             <GifSearchBar type="text" placeholder="Search for GIFs..." value={gifSearchTerm} onChange={(e) => setGifSearchTerm(e.target.value)} />
-            {isLoadingGifs ? <p style={{textAlign: 'center', padding: '1rem'}}>Loading...</p> : <GifGrid>{gifResults.map(gif => <GifGridItem key={gif.id} src={gif.preview} onClick={() => handleGifSelect(gif)} />)}</GifGrid>}
+            {isLoadingGifs ? <p style={{ textAlign: 'center', padding: '1rem' }}>Loading...</p> : <GifGrid>{gifResults.map(gif => <GifGridItem key={gif.id} src={gif.preview} onClick={() => handleGifSelect(gif)} />)}</GifGrid>}
           </GifPickerContent>
         </GifPickerModal>
       )}
