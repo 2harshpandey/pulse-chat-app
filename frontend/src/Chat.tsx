@@ -273,6 +273,7 @@ const MAX_NEW_MESSAGE_INDICATOR_COUNT = 99;
 const MAX_LOADED_MEDIA_TRACKING = 800;
 const MAX_QUOTE_JUMP_STACK_DEPTH = 64;
 const MAX_QUOTE_AUTO_LOAD_PAGES = 120;
+const QUOTE_JUMP_TARGET_TOP_RATIO = 0.42;
 const PHOTO_LIGHTBOX_MIN_SCALE = 1;
 const PHOTO_LIGHTBOX_MAX_SCALE = 5;
 const PHOTO_LIGHTBOX_STEP = 0.28;
@@ -5778,25 +5779,40 @@ function Chat() {
     const msgIndex = messagesRef.current.findIndex((m) => m.id === messageId);
     if (msgIndex === -1) return false;
 
-    const align: 'start' = 'start';
-    const scrollToTarget = (nextBehavior: 'auto' | 'smooth') => {
+    const scrollToTarget = (align: 'start' | 'center' | 'end', nextBehavior: 'auto' | 'smooth') => {
       virtuosoRef.current?.scrollToIndex({ index: msgIndex, align, behavior: nextBehavior });
     };
 
+    const settleMessageInViewport = (nextBehavior: 'auto' | 'smooth' = 'auto') => {
+      const messageElement = document.getElementById(`message-${messageId}`);
+      const scroller = getChatScrollerElement();
+      if (!messageElement || !scroller) return;
+
+      const scrollerRect = scroller.getBoundingClientRect();
+      const msgRect = messageElement.getBoundingClientRect();
+      const targetTop = scrollerRect.top + (scrollerRect.height * QUOTE_JUMP_TARGET_TOP_RATIO);
+      const delta = msgRect.top - targetTop;
+
+      if (Math.abs(delta) <= 1) return;
+      scroller.scrollBy({ top: delta, behavior: nextBehavior });
+    };
+
     if (behavior === 'smooth') {
-      scrollToTarget('smooth');
-      // Preserve a smooth slide, then snap once for pixel-perfect final placement.
-      window.setTimeout(() => scrollToTarget('auto'), 360);
-      window.setTimeout(() => highlightMessage(messageId), 420);
+      // Smoothly slide toward the target message, then settle it to a stable
+      // position slightly above center so it's fully visible and never clipped.
+      scrollToTarget('center', 'smooth');
+      window.setTimeout(() => settleMessageInViewport('auto'), 340);
+      window.setTimeout(() => settleMessageInViewport('auto'), 460);
+      window.setTimeout(() => highlightMessage(messageId), 430);
       return true;
     }
 
-    scrollToTarget('auto');
-    requestAnimationFrame(() => scrollToTarget('auto'));
-    window.setTimeout(() => scrollToTarget('auto'), 110);
+    scrollToTarget('center', 'auto');
+    requestAnimationFrame(() => settleMessageInViewport('auto'));
+    window.setTimeout(() => settleMessageInViewport('auto'), 110);
     window.setTimeout(() => highlightMessage(messageId), 120);
     return true;
-  }, [highlightMessage]);
+  }, [getChatScrollerElement, highlightMessage]);
 
   const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string) => {
     if (sourceMessageId && sourceMessageId !== messageId) {
