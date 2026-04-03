@@ -296,6 +296,14 @@ const MAX_MESSAGE_LENGTH = 65536;
 const INITIAL_HISTORY_BATCH_SIZE = 80;
 const HISTORY_PAGE_SIZE = 50;
 const INITIAL_FIRST_ITEM_INDEX = 100000;
+// ─── SCROLL INSTRUMENTATION ──────────────────────────────────────────────────
+// Set PULSE_SCROLL_DEBUG=true in localStorage to enable verbose scroll logging.
+const _scrollDebug = (() => {
+  try { return localStorage.getItem('PULSE_SCROLL_DEBUG') === 'true'; } catch { return false; }
+})();
+const scrollLog = _scrollDebug
+  ? (...args: unknown[]) => console.log('[PulseScroll]', ...args)
+  : () => {};
 const MAX_LINK_PREVIEW_CACHE_ENTRIES = 250;
 const VIRTUOSO_OVERSCAN_DESKTOP = 128;
 const VIRTUOSO_OVERSCAN_MOBILE = 96;
@@ -4835,12 +4843,18 @@ function Chat() {
   const [hasMoreOlderMessages, setHasMoreOlderMessages] = useState(true);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [oldestLoadedAt, setOldestLoadedAt] = useState<string | null>(null);
+  // ─── FIX: Unified firstItemIndex — single source of truth ───────────────
+  // The ref and state are kept perfectly in sync via setFirstItemIndex().
+  // The ref is used in scroll callbacks (stale closure-safe), the state
+  // is passed to <Virtuoso firstItemIndex={firstItemIndex}> for rendering.
   const [firstItemIndex, setFirstItemIndexState] = useState(INITIAL_FIRST_ITEM_INDEX);
   const firstItemIndexRef = useRef(INITIAL_FIRST_ITEM_INDEX);
   const setFirstItemIndex = useCallback((valOrUpdater: number | ((prev: number) => number)) => {
+    // Keep ref in sync synchronously — callbacks always read the latest value.
     setFirstItemIndexState((prev) => {
       const next = typeof valOrUpdater === 'function' ? valOrUpdater(prev) : valOrUpdater;
       firstItemIndexRef.current = next;
+      scrollLog('firstItemIndex →', next);
       return next;
     });
   }, []);
@@ -5897,6 +5911,12 @@ function Chat() {
     const existingIdsSnapshot = new Set(messagesRef.current.map((m) => m.id));
     const prependedCount = filteredBatch.reduce((count, m) => count + (existingIdsSnapshot.has(m.id) ? 0 : 1), 0);
 
+    // ─── FIX: Atomic prepend — update firstItemIndex inside the same
+    // setMessages updater so Virtuoso receives the new index and new data
+    // in ONE React batch. Splitting into two setState calls means Virtuoso
+    // can see the old index with the new (larger) data array for one frame,
+    // causing the visible anchor row to jump upward — the primary flicker
+    // root cause on first-pass upward scroll.
     setMessages((prev) => {
       const prevIds = new Set(prev.map((m) => m.id));
       const uniqueOlder = filteredBatch.filter((m) => !prevIds.has(m.id));
@@ -5910,7 +5930,13 @@ function Chat() {
 
       const actualPrependedCount = patchedOlder.length;
       if (actualPrependedCount > 0) {
-        setFirstItemIndex((prevIndex) => prevIndex - actualPrependedCount);
+        // Update the ref synchronously so the next render's itemContent closure
+        // already sees the correct firstItemIndex when Virtuoso re-renders.
+        const nextIdx = firstItemIndexRef.current - actualPrependedCount;
+        firstItemIndexRef.current = nextIdx;
+        // Schedule the state update; React will batch this with the message update.
+        setFirstItemIndex(nextIdx);
+        scrollLog('prepend', actualPrependedCount, 'msgs → new firstItemIndex', nextIdx);
       }
 
       return [...patchedOlder, ...patchedPrev];
