@@ -38,13 +38,14 @@ type DownloadProgressCallback = (progress: number) => void; // 0–1
  * Fetches a URL as a blob and reports incremental transfer progress when
  * content-length is available.
  */
-const fetchBlobWithProgress = async (resourceUrl: string, onProgress?: DownloadProgressCallback): Promise<Blob> => {
+const fetchBlobWithProgress = async (resourceUrl: string, onProgress?: DownloadProgressCallback, abortSignal?: AbortSignal): Promise<Blob> => {
   onProgress?.(0);
   const response = await fetch(resourceUrl, {
     method: 'GET',
     mode: 'cors',
     credentials: 'omit',
-    cache: 'no-store'
+    cache: 'no-store',
+    signal: abortSignal
   });
   if (!response.ok) throw new Error('Fetch failed');
 
@@ -78,7 +79,7 @@ const fetchBlobWithProgress = async (resourceUrl: string, onProgress?: DownloadP
  * Triggers a browser download for a file hosted on a trusted CDN.
  * Supports optional progress callback for showing download progress.
  */
-const downloadFile = async (url: string, filename: string, onProgress?: DownloadProgressCallback): Promise<void> => {
+const downloadFile = async (url: string, filename: string, onProgress?: DownloadProgressCallback, abortSignal?: AbortSignal): Promise<void> => {
   const normalizeFilename = (name: string, fallback: string): string => {
     const raw = (name || '').trim();
     const cleaned = raw
@@ -117,7 +118,7 @@ const downloadFile = async (url: string, filename: string, onProgress?: Download
   const safeFilename = normalizeFilename(filename, normalizeFilename(fallbackName, 'download'));
 
   try {
-    const blob = await fetchBlobWithProgress(parsed.href, onProgress);
+    const blob = await fetchBlobWithProgress(parsed.href, onProgress, abortSignal);
     const objectUrl = URL.createObjectURL(blob);
     triggerAnchorDownload(objectUrl, safeFilename);
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
@@ -3061,7 +3062,8 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
   const [speedIdx, setSpeedIdx] = useState(2); // 1x default
   const [doubleTapSide, setDoubleTapSide] = useState<'left' | 'right' | null>(null);
   const [showCenterPlay, setShowCenterPlay] = useState(false);
-  const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const isScrubbingRef = useRef(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -3083,7 +3085,11 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const onTimeUpdate = () => setCurrentTime(video.currentTime);
+    const onTimeUpdate = () => {
+      if (!isScrubbingRef.current) {
+        setCurrentTime(video.currentTime);
+      }
+    };
     const onLoadedMetadata = () => {
       setDuration(video.duration);
       video.currentTime = 0.01;
@@ -3212,8 +3218,25 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
     const rect = track.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const newTime = ratio * duration;
+    setCurrentTime(newTime);
     const v = videoRef.current;
-    if (v && duration > 0) v.currentTime = ratio * duration;
+    if (v && duration > 0) v.currentTime = newTime;
+  };
+
+  const handleScrubStart = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    setIsScrubbing(true);
+    isScrubbingRef.current = true;
+    handleTimelineClick(e);
+  };
+
+  const handleScrubMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    if (isScrubbingRef.current) handleTimelineClick(e);
+  };
+
+  const handleScrubEnd = () => {
+    setIsScrubbing(false);
+    isScrubbingRef.current = false;
   };
 
   // Handle mouse wheel on speaker icon for volume control (desktop)
@@ -3320,13 +3343,13 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
           {/* Timeline */}
           <CVPTimelineWrapper
             data-quote-swipe-ignore
-            onMouseDown={(e) => { setIsDraggingTimeline(true); handleTimelineClick(e); }}
-            onMouseMove={(e) => { if (isDraggingTimeline) handleTimelineClick(e); }}
-            onMouseUp={() => setIsDraggingTimeline(false)}
-            onMouseLeave={() => setIsDraggingTimeline(false)}
-            onTouchStart={(e) => { setIsDraggingTimeline(true); handleTimelineClick(e); e.stopPropagation(); }}
-            onTouchMove={(e) => { if (isDraggingTimeline) handleTimelineClick(e); e.stopPropagation(); }}
-            onTouchEnd={() => setIsDraggingTimeline(false)}
+            onMouseDown={(e) => handleScrubStart(e)}
+            onMouseMove={(e) => handleScrubMove(e)}
+            onMouseUp={handleScrubEnd}
+            onMouseLeave={handleScrubEnd}
+            onTouchStart={(e) => { handleScrubStart(e); e.stopPropagation(); }}
+            onTouchMove={(e) => { handleScrubMove(e); e.stopPropagation(); }}
+            onTouchEnd={handleScrubEnd}
             onClick={(e) => e.stopPropagation()}
           >
             <CVPTimelineTrack>
@@ -4890,6 +4913,8 @@ function Chat() {
   const mediaLoadInFlightRef = useRef<Set<string>>(new Set());
   const mediaBlobUrlMapRef = useRef<Map<string, string>>(new Map());
   const downloadInFlightRef = useRef<Set<string>>(new Set());
+  const downloadAbortControllersRef = useRef(new Map<string, AbortController>());
+  const mediaLoadAbortControllersRef = useRef(new Map<string, AbortController>());
   const quoteJumpReturnStackRef = useRef<string[]>([]);
   const lightboxFrameRef = useRef<HTMLDivElement>(null);
   const lightboxPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -5882,12 +5907,14 @@ function Chat() {
       );
       const patchedOlder = markDeletedReplyTargets(uniqueOlder, combinedDeletedIds);
       const patchedPrev = markDeletedReplyTargets(prev, combinedDeletedIds);
+
+      const actualPrependedCount = patchedOlder.length;
+      if (actualPrependedCount > 0) {
+        setFirstItemIndex((prevIndex) => prevIndex - actualPrependedCount);
+      }
+
       return [...patchedOlder, ...patchedPrev];
     });
-
-    if (prependedCount > 0) {
-      setFirstItemIndex((prev) => prev - prependedCount);
-    }
 
     setHasMoreOlderMessages(hasMore);
     hasMoreOlderMessagesRef.current = hasMore;
@@ -6744,7 +6771,16 @@ function Chat() {
 
   const handleRequestMediaLoad = useCallback((messageId: string, mediaUrl?: string) => {
     if (!messageId || !mediaUrl) return;
-    if (mediaLoadInFlightRef.current.has(messageId)) return;
+    if (mediaLoadInFlightRef.current.has(messageId)) {
+      mediaLoadAbortControllersRef.current.get(messageId)?.abort();
+      mediaLoadAbortControllersRef.current.delete(messageId);
+      mediaLoadInFlightRef.current.delete(messageId);
+      setMediaLoadProgressById((prev) => {
+        const { [messageId]: _discard, ...rest } = prev;
+        return rest;
+      });
+      return;
+    }
 
     const safeUrl = sanitizeMediaUrl(mediaUrl);
     if (!safeUrl) {
@@ -6758,6 +6794,8 @@ function Chat() {
       return;
     }
 
+    const abortController = new AbortController();
+    mediaLoadAbortControllersRef.current.set(messageId, abortController);
     mediaLoadInFlightRef.current.add(messageId);
     setMediaLoadProgressById((prev) => ({ ...prev, [messageId]: 0.02 }));
 
@@ -6768,7 +6806,7 @@ function Chat() {
             if (!(messageId in prev)) return prev;
             return { ...prev, [messageId]: Math.max(0.02, Math.min(1, progress)) };
           });
-        });
+        }, abortController.signal);
 
         const objectUrl = URL.createObjectURL(blob);
         const previousBlobUrl = mediaBlobUrlMapRef.current.get(messageId);
@@ -6783,7 +6821,8 @@ function Chat() {
             ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
             : next;
         });
-      } catch {
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
         // Fallback: if prefetch progress fails (e.g. CORS/content-length mismatch),
         // still allow direct media rendering so the user isn't stuck on the load gate.
         setLoadedMediaMessageIds((prev) => {
@@ -6806,8 +6845,19 @@ function Chat() {
 
   const handleRequestDownload = useCallback((messageId: string, mediaUrl: string, filename: string) => {
     if (!messageId || !mediaUrl) return;
-    if (downloadInFlightRef.current.has(messageId)) return;
+    if (downloadInFlightRef.current.has(messageId)) {
+      downloadAbortControllersRef.current.get(messageId)?.abort();
+      downloadAbortControllersRef.current.delete(messageId);
+      downloadInFlightRef.current.delete(messageId);
+      setDownloadProgressById((prev) => {
+        const { [messageId]: _discard, ...rest } = prev;
+        return rest;
+      });
+      return;
+    }
 
+    const abortController = new AbortController();
+    downloadAbortControllersRef.current.set(messageId, abortController);
     downloadInFlightRef.current.add(messageId);
     setDownloadProgressById((prev) => ({ ...prev, [messageId]: 0.02 }));
 
@@ -6818,7 +6868,9 @@ function Chat() {
             if (!(messageId in prev)) return prev;
             return { ...prev, [messageId]: Math.max(0.02, Math.min(1, progress)) };
           });
-        });
+        }, abortController.signal);
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
       } finally {
         downloadInFlightRef.current.delete(messageId);
         window.setTimeout(() => {
@@ -7452,7 +7504,6 @@ function Chat() {
                 {historyLoaded ? (
                   <Virtuoso
                     ref={virtuosoRef}
-                    alignToBottom
                     firstItemIndex={firstItemIndex}
                     data={messages}
                     initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
