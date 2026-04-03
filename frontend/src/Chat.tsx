@@ -5790,6 +5790,15 @@ function Chat() {
     }, Math.max(0, durationMs));
   }, []);
 
+  const clearQuoteJumpSuppression = useCallback(() => {
+    quoteJumpLockRef.current = false;
+    if (quoteJumpLockTimeoutRef.current !== null) {
+      window.clearTimeout(quoteJumpLockTimeoutRef.current);
+      quoteJumpLockTimeoutRef.current = null;
+    }
+    suppressProgrammaticScrollUntilRef.current = 0;
+  }, []);
+
   // ── Video fullscreen exit → restore scroll position ─────────────────
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -7456,9 +7465,9 @@ function Chat() {
     }
   }, [getChatScrollerElement, shouldSuppressProgrammaticScroll]);
 
-  const forceScrollToBottomAsync = useCallback(() => {
+  const forceScrollToBottomAsync = useCallback((allowDuringSuppression = false) => {
     clearPendingBottomScrollTimers();
-    if (shouldSuppressProgrammaticScroll()) return;
+    if (!allowDuringSuppression && shouldSuppressProgrammaticScroll()) return;
 
     scrollToBottom('auto', true);
     // Re-issue the scroll over the next 500ms to guarantee anchoring.
@@ -7467,7 +7476,7 @@ function Chat() {
     const delays = [50, 200, 450];
     pendingBottomScrollTimeoutsRef.current = delays.map((delay) =>
       window.setTimeout(() => {
-        if (shouldSuppressProgrammaticScroll()) return;
+        if (!allowDuringSuppression && shouldSuppressProgrammaticScroll()) return;
         scrollToBottom('auto', true);
       }, delay)
     );
@@ -7516,9 +7525,10 @@ function Chat() {
       document.activeElement.blur();
     }
     setNewMessagesWhileScrolledUp(0);
+    clearQuoteJumpSuppression();
     quoteLog('scroll-to-bottom falling back to bottom anchor');
-    forceScrollToBottomAsync();
-  }, [forceScrollToBottomAsync, isMobileView, scrollToLoadedMessage]);
+    forceScrollToBottomAsync(true);
+  }, [clearQuoteJumpSuppression, forceScrollToBottomAsync, isMobileView, scrollToLoadedMessage]);
 
   const handleEmojiClick = (emojiData: EmojiClickData) => { setInputMessage(prev => prev + emojiData.emoji); };
   const handleOpenEmojiPicker = useCallback((rect: DOMRect) => {
