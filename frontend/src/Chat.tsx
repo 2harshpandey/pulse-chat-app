@@ -846,15 +846,13 @@ const MessageRow = styled.div<{ $sender: string; $isSelected?: boolean; $isActiv
   padding-top: 3px;
   padding-bottom: 1px;
 
-  &.quote-jump-highlight {
-    animation: ${quoteJumpHighlight} 1.25s ease-out;
+  &, & * {
+    transition: none !important;
+    animation: none !important;
   }
 
-  @media (max-width: 768px) {
-    &, & * {
-      transition: none !important;
-      animation: none !important;
-    }
+  &.quote-jump-highlight {
+    animation: ${quoteJumpHighlight} 1.25s ease-out !important;
   }
 `;
 const Username = styled.div<{ $sender: 'me' | 'other' }>`
@@ -5294,11 +5292,12 @@ function Chat() {
   const downloadInFlightRef = useRef<Set<string>>(new Set());
   const downloadAbortControllersRef = useRef(new Map<string, AbortController>());
   const mediaLoadAbortControllersRef = useRef(new Map<string, AbortController>());
+  const isVirtuosoScrollingRef = useRef(false);
+  const pendingTopLoadAfterScrollRef = useRef(false);
   // Cooldown timestamp: prevents startReached from firing more often than
   // START_REACHED_COOLDOWN_MS. Virtuoso calls startReached on every scroll
-  // frame near the top; without throttling, the "Loading..." banner toggling
-  // 60×/s causes the list to jump and flicker even when isLoadingOlderRef
-  // correctly blocks parallel fetches.
+  // frame near the top; without throttling, repeated prepends near the
+  // threshold can still look jittery during slow upward drag.
   const lastStartReachedAtRef = useRef<number>(0);
   const quoteJumpReturnStackRef = useRef<string[]>([]);
   const lightboxFrameRef = useRef<HTMLDivElement>(null);
@@ -6438,6 +6437,14 @@ function Chat() {
   const loadOlderMessages = useCallback(async () => {
     if (!historyLoaded || isLoadingOlderRef.current || !hasMoreOlderMessagesRef.current || !oldestLoadedAtRef.current) return;
 
+    // Avoid prepending while the user is actively dragging/scrolling near top.
+    // Prepending mid-drag is a primary source of visible up/down jitter.
+    if (isVirtuosoScrollingRef.current) {
+      pendingTopLoadAfterScrollRef.current = true;
+      return;
+    }
+    pendingTopLoadAfterScrollRef.current = false;
+
     // ─── FIX: Throttle startReached ────────────────────────────────────────
     // Virtuoso fires startReached on every scroll frame near the top — up to
     // 60 calls per second. The lock prevents parallel fetches and the cooldown
@@ -6455,6 +6462,15 @@ function Chat() {
       isLoadingOlderRef.current = false;
     }
   }, [fetchAndPrependOlderMessages, historyLoaded]);
+
+  const handleVirtuosoIsScrolling = useCallback((isScrolling: boolean) => {
+    isVirtuosoScrollingRef.current = isScrolling;
+
+    if (!isScrolling && pendingTopLoadAfterScrollRef.current) {
+      pendingTopLoadAfterScrollRef.current = false;
+      void loadOlderMessages();
+    }
+  }, [loadOlderMessages]);
 
   const handleVideoFullscreenEnter = useCallback((messageId: string) => {
     const scroller = getChatScrollerElement();
@@ -8379,6 +8395,7 @@ function Chat() {
                     data={messages}
                     initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
                     startReached={loadOlderMessages}
+                    isScrolling={handleVirtuosoIsScrolling}
                     followOutput={virtuosoFollowOutput}
                     atBottomStateChange={handleAtBottomStateChange}
                     atBottomThreshold={20}
