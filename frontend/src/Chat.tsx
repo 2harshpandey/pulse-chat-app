@@ -4962,6 +4962,8 @@ function Chat() {
   const fullscreenScrollSnapshotRef = useRef<{ messageId: string; scrollTop: number; bottomOffset: number } | null>(null);
   const isVideoFullscreenSessionRef = useRef(false);
   const suppressProgrammaticScrollUntilRef = useRef<number>(0);
+  const quoteJumpLockRef = useRef(false);
+  const quoteJumpLockTimeoutRef = useRef<number | null>(null);
   const pendingBottomScrollTimeoutsRef = useRef<number[]>([]);
   // WebSocket auto-reconnect management refs
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -5703,7 +5705,11 @@ function Chat() {
   }, []);
 
   const shouldSuppressProgrammaticScroll = useCallback((): boolean => {
-    return isVideoFullscreenSessionRef.current || performance.now() < suppressProgrammaticScrollUntilRef.current;
+    return (
+      isVideoFullscreenSessionRef.current ||
+      quoteJumpLockRef.current ||
+      performance.now() < suppressProgrammaticScrollUntilRef.current
+    );
   }, []);
 
   const clearPendingBottomScrollTimers = useCallback(() => {
@@ -5715,6 +5721,18 @@ function Chat() {
   const scheduleProgrammaticScrollSuppression = useCallback((durationMs: number) => {
     const until = performance.now() + Math.max(0, durationMs);
     suppressProgrammaticScrollUntilRef.current = Math.max(suppressProgrammaticScrollUntilRef.current, until);
+  }, []);
+
+  const engageQuoteJumpLock = useCallback((durationMs: number) => {
+    quoteJumpLockRef.current = true;
+    if (quoteJumpLockTimeoutRef.current !== null) {
+      window.clearTimeout(quoteJumpLockTimeoutRef.current);
+      quoteJumpLockTimeoutRef.current = null;
+    }
+    quoteJumpLockTimeoutRef.current = window.setTimeout(() => {
+      quoteJumpLockRef.current = false;
+      quoteJumpLockTimeoutRef.current = null;
+    }, Math.max(0, durationMs));
   }, []);
 
   // ── Video fullscreen exit → restore scroll position ─────────────────
@@ -6865,6 +6883,17 @@ function Chat() {
   const lastAtBottomStateRef = useRef(true);
 
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    if (quoteJumpLockRef.current) {
+      // During quote navigation we force a non-bottom state so followOutput
+      // cannot pin back to the latest message.
+      isAtBottomRef.current = false;
+      if (lastAtBottomStateRef.current !== false) {
+        lastAtBottomStateRef.current = false;
+        setIsScrollToBottomVisible(true);
+      }
+      return;
+    }
+
     isAtBottomRef.current = atBottom;
     
     // Only update visibility during user-initiated scroll, not programmatic scroll.
@@ -7056,8 +7085,11 @@ function Chat() {
     // 2. Suppress all bottom-pinning for 5+ seconds
     // 3. Track if the user manually scrolled during this window
     clearPendingBottomScrollTimers();
-    scheduleProgrammaticScrollSuppression(2200);
+    engageQuoteJumpLock(2600);
+    scheduleProgrammaticScrollSuppression(2600);
     lastAtBottomStateRef.current = false;
+    isAtBottomRef.current = false;
+    setIsScrollToBottomVisible(true);
     scrollLog('quote-jump to', targetId, 'msgIndex', msgIndex, 'firstItemIndex(state/ref)', firstItemIndex, firstItemIndexRef.current);
 
     const scroller = getChatScrollerElement();
@@ -7111,7 +7143,7 @@ function Chat() {
 
     requestAnimationFrame(() => ensureVisibleAndHighlight(0));
     return true;
-  }, [clearPendingBottomScrollTimers, firstItemIndex, getChatScrollerElement, highlightMessage, scheduleProgrammaticScrollSuppression]);
+  }, [clearPendingBottomScrollTimers, engageQuoteJumpLock, firstItemIndex, getChatScrollerElement, highlightMessage, scheduleProgrammaticScrollSuppression]);
 
   const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string, behavior: 'auto' | 'smooth' = 'auto') => {
     const targetId = normalizeMessageId(messageId);
@@ -7199,6 +7231,10 @@ function Chat() {
   useEffect(() => {
     return () => {
       clearPendingBottomScrollTimers();
+      if (quoteJumpLockTimeoutRef.current !== null) {
+        window.clearTimeout(quoteJumpLockTimeoutRef.current);
+        quoteJumpLockTimeoutRef.current = null;
+      }
     };
   }, [clearPendingBottomScrollTimers]);
 
@@ -7269,13 +7305,11 @@ function Chat() {
   // 2. Only return 'auto' if BOTH suppressProgrammaticScroll window is expired AND user is at bottom
   // 3. Use our isAtBottomRef (set by real user scroll), not Virtuoso's param
   const virtuosoFollowOutput = useCallback((_isAtBottom: boolean): 'smooth' | false | 'auto' => {
-    // ALWAYS return false if in suppression window - no exceptions
-    if (isVideoFullscreenSessionRef.current) return false;
-    if (performance.now() < suppressProgrammaticScrollUntilRef.current) return false;
+    if (shouldSuppressProgrammaticScroll()) return false;
     
     // Only enable auto-follow if user is genuinely at bottom (our own tracking)
     return isAtBottomRef.current ? 'auto' : false;
-  }, []);
+  }, [shouldSuppressProgrammaticScroll]);
 
   // Disable scroll-seek placeholders on all devices.
   // In a chat transcript, placeholder swapping can appear as blink/shake
