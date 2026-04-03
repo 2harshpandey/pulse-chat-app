@@ -1063,7 +1063,7 @@ const MediaContent = styled.div`
 const mediaFrameStyles = css`
   position: relative;
   display: block;
-  width: clamp(208px, 58vw, 320px);
+  width: min(100%, clamp(208px, 58vw, 320px));
   max-width: 100%;
   flex: 0 0 auto;
   aspect-ratio: 1 / 1;
@@ -1071,11 +1071,11 @@ const mediaFrameStyles = css`
   overflow: hidden;
 
   @media (max-width: 768px) {
-    width: clamp(192px, 70vw, 260px);
+    width: min(100%, clamp(192px, 70vw, 260px));
   }
 
   @media (max-width: 420px) {
-    width: clamp(176px, 72vw, 236px);
+    width: min(100%, clamp(176px, 72vw, 236px));
   }
 `;
 
