@@ -5304,13 +5304,11 @@ function Chat() {
     updateStableViewportBaseline();
     handleViewportResize();
     window.visualViewport?.addEventListener('resize', handleViewportResize);
-    window.visualViewport?.addEventListener('scroll', handleViewportResize);
     window.addEventListener('resize', handleViewportResize);
     window.addEventListener('orientationchange', handleViewportResize);
 
     return () => {
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
-      window.visualViewport?.removeEventListener('scroll', handleViewportResize);
       window.removeEventListener('resize', handleViewportResize);
       window.removeEventListener('orientationchange', handleViewportResize);
     };
@@ -7201,6 +7199,16 @@ function Chat() {
     return isAtBottomRef.current ? 'auto' : false;
   }, [shouldSuppressProgrammaticScroll]);
 
+  // Scroll seek is useful on desktop, but on touch devices it can swap rows
+  // into placeholders during fast flicks, which reads as blinking/jitter in
+  // a chat transcript. Keep mobile rows fully rendered for stable scrolling.
+  const virtuosoScrollSeekConfiguration = isMobileView
+    ? undefined
+    : {
+        enter: (velocity: number) => Math.abs(velocity) > 500,
+        exit: (velocity: number) => Math.abs(velocity) < 30,
+      };
+
   // --- RENDER ---
   if (!userContext?.profile) { return <Auth onAuthSuccess={userContext!.login} tempToken={tempToken || null} />; }
 
@@ -7610,10 +7618,7 @@ function Chat() {
                     defaultItemHeight={72}
                     increaseViewportBy={virtuosoIncreaseViewportBy}
                     overscan={virtuosoOverscan}
-                    scrollSeekConfiguration={{
-                      enter: (velocity) => Math.abs(velocity) > 500,
-                      exit: (velocity) => Math.abs(velocity) < 30,
-                    }}
+                    scrollSeekConfiguration={virtuosoScrollSeekConfiguration}
                     computeItemKey={(index: number, msg: Message) => msg.id || index}
                     style={{ flex: 1, overflow: 'auto' }}
                     components={{
