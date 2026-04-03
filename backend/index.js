@@ -50,6 +50,81 @@ const isPrivateOrInternalIp = (ip) => {
   return true; // unknown format — block by default
 };
 
+const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.com'];
+
+const isAllowedDownloadHost = (hostname) =>
+  ALLOWED_DOWNLOAD_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+
+const sanitizeDownloadFilename = (name, fallback = 'download') => {
+  const raw = String(name || '').trim();
+  const cleaned = raw
+    .replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 140);
+  return cleaned || fallback;
+};
+
+const parseCloudinaryAssetFromUrl = (assetUrl) => {
+  try {
+    const parsed = new URL(assetUrl);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname !== 'res.cloudinary.com' && !hostname.endsWith('.res.cloudinary.com')) return null;
+
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    // Expected: /<cloud_name>/<resource_type>/<delivery_type>/<...>/v<version>/<public_id>.<ext>
+    if (segments.length < 5) return null;
+
+    const resourceType = segments[1];
+    const deliveryType = segments[2];
+    const tailSegments = segments.slice(3);
+    const versionIndex = tailSegments.findIndex((segment) => /^v\d+$/.test(segment));
+    const publicSegments = versionIndex >= 0 ? tailSegments.slice(versionIndex + 1) : tailSegments;
+    if (publicSegments.length === 0) return null;
+
+    const publicPath = publicSegments.join('/');
+    const extensionMatch = publicPath.match(/\.([a-zA-Z0-9]{1,16})$/);
+    const format = extensionMatch ? extensionMatch[1] : '';
+    const publicId = extensionMatch
+      ? publicPath.slice(0, -(`.${format}`).length)
+      : publicPath;
+
+    if (!publicId) return null;
+    return { resourceType, deliveryType, publicId, format };
+  } catch {
+    return null;
+  }
+};
+
+const getSignedCloudinaryDownloadUrl = (assetUrl, filename) => {
+  const parsedAsset = parseCloudinaryAssetFromUrl(assetUrl);
+  if (!parsedAsset) return '';
+
+  const expiresAt = Math.floor(Date.now() / 1000) + (5 * 60);
+  const attachmentName = sanitizeDownloadFilename(filename, 'download');
+  const candidateOptions = [
+    { resource_type: parsedAsset.resourceType, type: parsedAsset.deliveryType || 'upload' },
+    { resource_type: parsedAsset.resourceType, type: 'authenticated' },
+    { resource_type: 'raw', type: parsedAsset.deliveryType || 'upload' },
+    { resource_type: 'raw', type: 'authenticated' },
+  ];
+
+  for (const options of candidateOptions) {
+    try {
+      const signedUrl = cloudinary.utils.private_download_url(parsedAsset.publicId, parsedAsset.format, {
+        ...options,
+        attachment: attachmentName,
+        expires_at: expiresAt,
+      });
+      if (signedUrl) return signedUrl;
+    } catch {
+      // Try next variant.
+    }
+  }
+
+  return '';
+};
+
 // --- Rate Limiters ---
 // Prevent brute-force and abuse on public/sensitive endpoints.
 
@@ -853,6 +928,99 @@ app.get('/api/link-preview', apiLimiter, async (req, res) => {
   } catch (error) {
     logger.error('Link preview fetch error:', { message: error.message });
     res.status(500).json({ error: 'Failed to fetch preview' });
+  }
+});
+
+app.all('/api/download', apiLimiter, async (req, res) => {
+  try {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return res.status(405).json({ error: 'Method not allowed.' });
+    }
+
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url.trim() : '';
+    const requestedFilename = typeof req.query.filename === 'string' ? req.query.filename : '';
+    if (!rawUrl) return res.status(400).json({ error: 'URL parameter required.' });
+
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ error: 'Invalid URL.' });
+    }
+
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+      return res.status(400).json({ error: 'Invalid URL protocol.' });
+    }
+    if (!isAllowedDownloadHost(parsedUrl.hostname)) {
+      return res.status(400).json({ error: 'Untrusted download host.' });
+    }
+
+    let pathName = parsedUrl.pathname.split('/').pop() || '';
+    try {
+      pathName = decodeURIComponent(pathName);
+    } catch {
+      // Keep raw fallback if decoding fails.
+    }
+
+    const fallbackName = sanitizeDownloadFilename(pathName || 'download', 'download');
+    const safeFilename = sanitizeDownloadFilename(requestedFilename, fallbackName);
+    const contentDisposition = `attachment; filename="${safeFilename.replace(/\"/g, '')}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`;
+
+    const fetchHead = (targetUrl) => axios.head(targetUrl, {
+      timeout: 20000,
+      maxRedirects: 3,
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+
+    const fetchBody = (targetUrl) => axios.get(targetUrl, {
+      responseType: 'arraybuffer',
+      timeout: 30000,
+      maxRedirects: 3,
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+
+    const runWithCloudinaryFallback = async (executor) => {
+      try {
+        return await executor(parsedUrl.href);
+      } catch (err) {
+        const signedUrl = getSignedCloudinaryDownloadUrl(parsedUrl.href, safeFilename);
+        if (!signedUrl) throw err;
+        return executor(signedUrl);
+      }
+    };
+
+    if (req.method === 'HEAD') {
+      const meta = await runWithCloudinaryFallback(fetchHead);
+      const contentType = String(meta.headers['content-type'] || 'application/octet-stream');
+      const contentLength = Number.parseInt(String(meta.headers['content-length'] || ''), 10);
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', contentDisposition);
+      res.setHeader('Cache-Control', 'private, max-age=120');
+      if (Number.isFinite(contentLength) && contentLength > 0) {
+        res.setHeader('Content-Length', String(contentLength));
+      }
+      return res.status(200).end();
+    }
+
+    const payloadResponse = await runWithCloudinaryFallback(fetchBody);
+    const payload = Buffer.from(payloadResponse.data || []);
+    const contentType = String(payloadResponse.headers['content-type'] || 'application/octet-stream');
+    const upstreamLength = Number.parseInt(String(payloadResponse.headers['content-length'] || ''), 10);
+    const finalLength = Number.isFinite(upstreamLength) && upstreamLength > 0 ? upstreamLength : payload.length;
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', contentDisposition);
+    res.setHeader('Cache-Control', 'private, max-age=120');
+    res.setHeader('Content-Length', String(finalLength));
+    return res.status(200).send(payload);
+  } catch (error) {
+    logger.error('Download proxy error:', {
+      message: error.message,
+      status: error.response?.status,
+      code: error.code,
+    });
+    return res.status(502).json({ error: 'Failed to download file.' });
   }
 });
 

@@ -75,6 +75,21 @@ const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.
  */
 type DownloadProgressCallback = (progress: number) => void; // 0–1
 
+const resolveApiBaseUrl = (): string => {
+  const base = (process.env.REACT_APP_API_URL || '').trim().replace(/\/$/, '');
+  if (!base) return '';
+  const useHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+  return base.replace(/^http:\/\//, useHttps ? 'https://' : 'http://');
+};
+
+const buildDownloadProxyUrl = (resourceUrl: string, filename?: string): string => {
+  const apiBase = resolveApiBaseUrl();
+  const endpoint = `${apiBase}/api/download`;
+  const params = new URLSearchParams({ url: resourceUrl });
+  if (filename) params.set('filename', filename);
+  return `${endpoint}?${params.toString()}`;
+};
+
 /**
  * Fetches a URL as a blob and reports incremental transfer progress when
  * content-length is available.
@@ -168,8 +183,22 @@ const downloadFile = async (url: string, filename: string, onProgress?: Download
       onProgress?.(0);
       return;
     }
-    onProgress?.(0);
-    triggerAnchorDownload(parsed.href, safeFilename);
+
+    try {
+      const proxyUrl = buildDownloadProxyUrl(parsed.href, safeFilename);
+      const blob = await fetchBlobWithProgress(proxyUrl, onProgress, abortSignal);
+      const objectUrl = URL.createObjectURL(blob);
+      triggerAnchorDownload(objectUrl, safeFilename);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      return;
+    } catch (proxyError: any) {
+      if (proxyError?.name === 'AbortError' || abortSignal?.aborted) {
+        onProgress?.(0);
+        return;
+      }
+      onProgress?.(0);
+      throw proxyError;
+    }
   }
 };
 
@@ -272,6 +301,24 @@ const formatMediaSize = (bytes?: number): string => {
   const precision = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(precision)} ${units[unitIndex]}`;
 };
+
+const getFileContainerLabel = (name?: string, fileUrl?: string): string => {
+  let candidate = (name || '').trim();
+
+  if (!candidate && fileUrl) {
+    try {
+      const parsed = new URL(fileUrl);
+      candidate = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+    } catch {
+      candidate = '';
+    }
+  }
+
+  const extensionMatch = candidate.match(/\.([a-z0-9]{1,16})$/i);
+  return extensionMatch ? extensionMatch[1].toUpperCase() : 'FILE';
+};
+
+const inferredContentLengthByUrlCache = new Map<string, number>();
 
 const getCurrentHistoryPath = (): string =>
   `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -1147,7 +1194,30 @@ const FileAttachmentCard = styled.div`
   &:active { transform: scale(0.98); }
   svg { flex-shrink: 0; transition: transform 0.2s ease; }
   &:hover svg { transform: scale(1.05); }
-  span { font-size: 0.85rem; font-weight: 500; word-break: break-all; opacity: 0.85; flex: 1; min-width: 0; }
+`;
+
+const FileAttachmentMeta = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+`;
+
+const FileAttachmentName = styled.span`
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.2;
+  word-break: break-all;
+  opacity: 0.9;
+`;
+
+const FileAttachmentDetails = styled.span`
+  font-size: 0.69rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  opacity: 0.72;
+  text-transform: uppercase;
 `;
 
 const MediaContent = styled.div`
@@ -3764,6 +3834,8 @@ const renderMessageContent = (
   const clampedLoadProgress = Math.max(0, Math.min(1, mediaLoadProgress || 0));
   const clampedDownloadProgress = Math.max(0, Math.min(1, downloadProgress || 0));
   const mediaSizeLabel = formatMediaSize(msg.size);
+  const fileContainerLabel = getFileContainerLabel(msg.originalName, msg.url);
+  const fileMetaLabel = [formatMediaSize(msg.size), fileContainerLabel].filter(Boolean).join(' • ');
   const gatePreviewUrl = shouldGateMedia
     ? sanitizeMediaUrl(getMediaGatePreviewUrl(isVideo ? 'video' : 'image', resolvedMediaUrl || msg.url))
     : '';
@@ -3934,7 +4006,10 @@ const renderMessageContent = (
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
-          <span>{msg.originalName || 'Download file'}</span>
+          <FileAttachmentMeta>
+            <FileAttachmentName>{msg.originalName || 'Download file'}</FileAttachmentName>
+            <FileAttachmentDetails>{fileMetaLabel}</FileAttachmentDetails>
+          </FileAttachmentMeta>
           {isDownloadInProgress ? (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}>
               <RingedDownloadIcon progress={clampedDownloadProgress} />
@@ -4148,6 +4223,67 @@ const MessageItem = React.memo(({
   const messageRowRef = useRef<HTMLDivElement>(null!);
   const messageBubbleRef = useRef<HTMLDivElement>(null!);
   const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right?: number; left?: number } | null>(null);
+  const [resolvedContentSize, setResolvedContentSize] = useState<number | undefined>(() => {
+    if (typeof msg.size === 'number' && msg.size > 0) return msg.size;
+    const safeUrl = sanitizeMediaUrl(msg.url);
+    return safeUrl ? inferredContentLengthByUrlCache.get(safeUrl) : undefined;
+  });
+
+  const messageWithResolvedSize = useMemo<Message>(() => {
+    if (typeof resolvedContentSize !== 'number' || resolvedContentSize <= 0 || msg.size === resolvedContentSize) {
+      return msg;
+    }
+    return { ...msg, size: resolvedContentSize };
+  }, [msg, resolvedContentSize]);
+
+  useEffect(() => {
+    if (typeof msg.size === 'number' && msg.size > 0) {
+      setResolvedContentSize(msg.size);
+      const safeUrl = sanitizeMediaUrl(msg.url);
+      if (safeUrl) inferredContentLengthByUrlCache.set(safeUrl, msg.size);
+      return;
+    }
+
+    const safeUrl = sanitizeMediaUrl(msg.url);
+    if (!safeUrl) {
+      setResolvedContentSize(undefined);
+      return;
+    }
+
+    setResolvedContentSize(inferredContentLengthByUrlCache.get(safeUrl));
+  }, [msg.id, msg.size, msg.url]);
+
+  useEffect(() => {
+    if (typeof msg.size === 'number' && msg.size > 0) return;
+    if (!msg.url) return;
+    if (msg.type !== 'image' && msg.type !== 'video' && msg.type !== 'file') return;
+
+    const safeUrl = sanitizeMediaUrl(msg.url);
+    if (!safeUrl) return;
+    if (inferredContentLengthByUrlCache.has(safeUrl)) return;
+
+    const abortController = new AbortController();
+    const metadataUrl = buildDownloadProxyUrl(safeUrl, msg.originalName);
+
+    void fetch(metadataUrl, {
+      method: 'HEAD',
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'force-cache',
+      signal: abortController.signal,
+    }).then((response) => {
+      if (!response.ok) return;
+      const contentLengthHeader = response.headers.get('content-length');
+      const parsedLength = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : NaN;
+      if (!Number.isFinite(parsedLength) || parsedLength <= 0) return;
+      inferredContentLengthByUrlCache.set(safeUrl, parsedLength);
+      setResolvedContentSize(parsedLength);
+    }).catch(() => {
+      // Ignore metadata failures: UI can still function without explicit size.
+    });
+
+    return () => abortController.abort();
+  }, [msg.id, msg.originalName, msg.size, msg.type, msg.url]);
 
   // Keep menuPos in sync: clear it whenever this row's menu is closed from outside.
   useEffect(() => {
@@ -4712,7 +4848,7 @@ const MessageItem = React.memo(({
                 {/* DeleteMenu rendered as fixed portal — see block after </MessageRow> */}
                 {msg.type === 'text' && !msg.url && msg.text && (() => { const _u = detectFirstUrl(msg.text); return _u ? <LinkPreview url={_u} sender={sender} /> : null; })()}
                 {renderMessageContent(
-                  msg,
+                  messageWithResolvedSize,
                   openLightbox,
                   isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined,
                   sender,
