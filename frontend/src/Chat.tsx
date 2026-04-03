@@ -2629,6 +2629,7 @@ const CVPContainer = styled.div`
   --cvp-timeline-padding: 8px 0;
   --cvp-track-height: 3px;
   --cvp-thumb-size: 11px;
+  --cvp-edge-pad-right: 2px;
 
   position: relative;
   width: 100%;
@@ -2652,19 +2653,20 @@ const CVPContainer = styled.div`
     background: #000;
     clip-path: inset(0);
 
-    --cvp-controls-padding: 12px 16px 14px;
-    --cvp-row-gap: 8px;
-    --cvp-icon-size: 24px;
-    --cvp-icon-pad: 8px;
-    --cvp-time-size: 0.92rem;
-    --cvp-speed-font-size: 0.9rem;
-    --cvp-speed-width: 64px;
-    --cvp-speed-pad-y: 6px;
-    --cvp-speed-pad-x: 10px;
-    --cvp-timeline-height: 34px;
+    --cvp-controls-padding: 10px 12px 12px;
+    --cvp-row-gap: 3px;
+    --cvp-icon-size: 20px;
+    --cvp-icon-pad: 5px;
+    --cvp-time-size: 0.78rem;
+    --cvp-speed-font-size: 0.72rem;
+    --cvp-speed-width: 48px;
+    --cvp-speed-pad-y: 3px;
+    --cvp-speed-pad-x: 7px;
+    --cvp-timeline-height: 30px;
     --cvp-timeline-padding: 12px 0;
-    --cvp-track-height: 5px;
-    --cvp-thumb-size: 16px;
+    --cvp-track-height: 4px;
+    --cvp-thumb-size: 14px;
+    --cvp-edge-pad-right: 0px;
   }
 
   video {
@@ -2758,6 +2760,7 @@ const CVPBottomRow = styled.div`
   flex-wrap: nowrap;
   min-width: 0;
   overflow: hidden;
+  padding-right: var(--cvp-edge-pad-right, 2px);
 
   /* Shrink icon buttons on small frames */
   @media (max-width: 420px) {
@@ -3359,7 +3362,7 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
 
             {/* Picture in Picture */}
             {document.pictureInPictureEnabled && (
-              <CVPIconBtn onClick={togglePiP} title="Picture in Picture" aria-label="Picture in Picture">
+              <CVPIconBtn className="cvp-pip-btn" onClick={togglePiP} title="Picture in Picture" aria-label="Picture in Picture">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="4" width="20" height="14" rx="2"/><rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor" stroke="none" opacity="0.6"/>
                 </svg>
