@@ -35,10 +35,50 @@ const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.
 type DownloadProgressCallback = (progress: number) => void; // 0–1
 
 /**
+ * Fetches a URL as a blob and reports incremental transfer progress when
+ * content-length is available.
+ */
+const fetchBlobWithProgress = async (resourceUrl: string, onProgress?: DownloadProgressCallback): Promise<Blob> => {
+  onProgress?.(0);
+  const response = await fetch(resourceUrl, {
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'omit',
+    cache: 'no-store'
+  });
+  if (!response.ok) throw new Error('Fetch failed');
+
+  const contentLength = response.headers.get('content-length');
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+  if (total > 0 && response.body) {
+    const reader = response.body.getReader();
+    const chunks: BlobPart[] = [];
+    let received = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value as unknown as BlobPart);
+      received += (value?.length ?? 0);
+      onProgress?.(Math.max(0, Math.min(1, received / total)));
+    }
+    const blob = new Blob(chunks);
+    if (!blob || blob.size === 0) throw new Error('Empty blob');
+    onProgress?.(1);
+    return blob;
+  }
+
+  const blob = await response.blob();
+  if (!blob || blob.size === 0) throw new Error('Empty blob');
+  onProgress?.(1);
+  return blob;
+};
+
+/**
  * Triggers a browser download for a file hosted on a trusted CDN.
  * Supports optional progress callback for showing download progress.
  */
-const downloadFile = (url: string, filename: string, onProgress?: DownloadProgressCallback): void => {
+const downloadFile = async (url: string, filename: string, onProgress?: DownloadProgressCallback): Promise<void> => {
   const normalizeFilename = (name: string, fallback: string): string => {
     const raw = (name || '').trim();
     const cleaned = raw
@@ -60,66 +100,31 @@ const downloadFile = (url: string, filename: string, onProgress?: DownloadProgre
     document.body.removeChild(anchor);
   };
 
-  void (async () => {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return;
-    }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return;
+  }
 
-    const isTrustedHost =
-      (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
-      ALLOWED_DOWNLOAD_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
-    if (!isTrustedHost) return;
+  const isTrustedHost =
+    (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+    ALLOWED_DOWNLOAD_HOSTS.some(h => parsed.hostname === h || parsed.hostname.endsWith('.' + h));
+  if (!isTrustedHost) return;
 
-    const pathName = decodeURIComponent(parsed.pathname.split('/').pop() || '');
-    const fallbackName = pathName || 'download';
-    const safeFilename = normalizeFilename(filename, normalizeFilename(fallbackName, 'download'));
+  const pathName = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+  const fallbackName = pathName || 'download';
+  const safeFilename = normalizeFilename(filename, normalizeFilename(fallbackName, 'download'));
 
-    try {
-      onProgress?.(0);
-      const response = await fetch(parsed.href, {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
-        cache: 'no-store'
-      });
-      if (!response.ok) throw new Error('Download failed');
-
-      const contentLength = response.headers.get('content-length');
-      const total = contentLength ? parseInt(contentLength, 10) : 0;
-
-      if (total > 0 && response.body) {
-        const reader = response.body.getReader();
-        const chunks: Uint8Array<ArrayBuffer>[] = [];
-        let received = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) chunks.push(value as Uint8Array<ArrayBuffer>);
-          received += (value?.length ?? 0);
-          onProgress?.(received / total);
-        }
-        onProgress?.(1);
-        const blob = new Blob(chunks);
-        if (!blob || blob.size === 0) throw new Error('Empty download');
-        const objectUrl = URL.createObjectURL(blob);
-        triggerAnchorDownload(objectUrl, safeFilename);
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-      } else {
-        const blob = await response.blob();
-        if (!blob || blob.size === 0) throw new Error('Empty download');
-        onProgress?.(1);
-        const objectUrl = URL.createObjectURL(blob);
-        triggerAnchorDownload(objectUrl, safeFilename);
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-      }
-    } catch {
-      onProgress?.(0);
-      triggerAnchorDownload(parsed.href, safeFilename);
-    }
-  })();
+  try {
+    const blob = await fetchBlobWithProgress(parsed.href, onProgress);
+    const objectUrl = URL.createObjectURL(blob);
+    triggerAnchorDownload(objectUrl, safeFilename);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+  } catch {
+    onProgress?.(0);
+    triggerAnchorDownload(parsed.href, safeFilename);
+  }
 };
 
 /**
@@ -313,7 +318,7 @@ const MAX_REPORT_REASON_LENGTH = 500;
 // --- STYLED COMPONENTS ---
 export const GlobalStyle = createGlobalStyle`
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body, #root { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  html, body, #root { height: var(--app-height, 100dvh); width: 100%; overflow: hidden; overscroll-behavior: none; position: fixed; inset: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: var(--bg-primary); color: var(--text-primary); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; transition: background-color 0.3s ease, color 0.3s ease; }
   * { -webkit-tap-highlight-color: transparent; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -1084,8 +1089,8 @@ const MediaDownloadOverlayBtn = styled.button`
   position: absolute;
   top: 8px;
   left: 8px;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: none;
   background: rgba(0, 0, 0, 0.52);
@@ -1101,7 +1106,8 @@ const MediaDownloadOverlayBtn = styled.button`
   z-index: 4;
   svg { width: 15px; height: 15px; }
   &:hover { background: rgba(0, 0, 0, 0.72); }
-  @media (max-width: 768px) { opacity: 1; width: 28px; height: 28px; }
+  &:disabled { cursor: default; opacity: 1; }
+  @media (max-width: 768px) { opacity: 1; width: 32px; height: 32px; }
 `;
 
 /* Uniform frame wrapper for media objects to prevent scroll glitches during lazy load */
@@ -2616,7 +2622,7 @@ const VideoPlayerWrapper = styled.div`
 `;
 
 const CVPContainer = styled.div`
-  --cvp-controls-padding: 4px 6px 6px;
+  --cvp-controls-padding: 4px 8px 6px;
   --cvp-row-gap: 2px;
   --cvp-icon-size: 16px;
   --cvp-icon-pad: 3px;
@@ -2629,7 +2635,7 @@ const CVPContainer = styled.div`
   --cvp-timeline-padding: 8px 0;
   --cvp-track-height: 3px;
   --cvp-thumb-size: 11px;
-  --cvp-edge-pad-right: 2px;
+  --cvp-edge-pad-right: 4px;
 
   position: relative;
   width: 100%;
@@ -2653,20 +2659,20 @@ const CVPContainer = styled.div`
     background: #000;
     clip-path: inset(0);
 
-    --cvp-controls-padding: 10px 12px 12px;
-    --cvp-row-gap: 3px;
-    --cvp-icon-size: 20px;
+    --cvp-controls-padding: 9px 10px 11px;
+    --cvp-row-gap: 2px;
+    --cvp-icon-size: 18px;
     --cvp-icon-pad: 5px;
-    --cvp-time-size: 0.78rem;
-    --cvp-speed-font-size: 0.72rem;
-    --cvp-speed-width: 48px;
+    --cvp-time-size: 0.74rem;
+    --cvp-speed-font-size: 0.66rem;
+    --cvp-speed-width: 42px;
     --cvp-speed-pad-y: 3px;
-    --cvp-speed-pad-x: 7px;
-    --cvp-timeline-height: 30px;
-    --cvp-timeline-padding: 12px 0;
+    --cvp-speed-pad-x: 6px;
+    --cvp-timeline-height: 28px;
+    --cvp-timeline-padding: 10px 0;
     --cvp-track-height: 4px;
-    --cvp-thumb-size: 14px;
-    --cvp-edge-pad-right: 0px;
+    --cvp-thumb-size: 13px;
+    --cvp-edge-pad-right: 2px;
   }
 
   video {
@@ -2766,15 +2772,10 @@ const CVPBottomRow = styled.div`
   @media (max-width: 420px) {
     gap: 1px;
   }
-
-  /* Hide PiP on touch devices (rarely supported + wastes space) */
-  @media (pointer: coarse) {
-    .cvp-pip-btn { display: none; }
-  }
 `;
 
-const CVPIconBtn = styled.button`
-  background: none;
+const CVPIconBtn = styled.button<{ $active?: boolean }>`
+  background: ${p => p.$active ? 'rgba(59,130,246,0.38)' : 'none'};
   border: none;
   color: #fff;
   cursor: pointer;
@@ -2788,6 +2789,7 @@ const CVPIconBtn = styled.button`
   svg { width: var(--cvp-icon-size, 16px); height: var(--cvp-icon-size, 16px); overflow: visible; }
   &:hover { background: rgba(255,255,255,0.15); transform: scale(1.12); }
   &:active { transform: scale(0.9); }
+  &:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 `;
 
 const CVPTime = styled.span`
@@ -3057,6 +3059,7 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
   const [showCenterPlay, setShowCenterPlay] = useState(false);
   const [isDraggingTimeline, setIsDraggingTimeline] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   const hideControlsTimerRef = useRef<NodeJS.Timeout | null>(null);
   const doubleTapTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastTapTimeRef = useRef(0);
@@ -3083,7 +3086,14 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
     };
     const onPlay = () => { setIsPlaying(true); resetControlsTimer(); };
     const onPause = () => { setIsPlaying(false); setShowControls(true); if (hideControlsTimerRef.current) clearTimeout(hideControlsTimerRef.current); };
-    const onEnded = () => { setIsPlaying(false); setShowControls(true); };
+    const onEnded = () => {
+      if (video.loop) {
+        setIsPlaying(true);
+        return;
+      }
+      setIsPlaying(false);
+      setShowControls(true);
+    };
     const onVolumeChange = () => { setVolume(video.volume); setIsMuted(video.muted); };
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -3104,11 +3114,18 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
   // Fullscreen change tracking
   useEffect(() => {
     const handleFSChange = () => {
-      const fs = !!(document.fullscreenElement || (document as any).webkitFullscreenElement);
-      setIsFullscreen(fs);
-      if (fs) {
+      const fsElement = (document.fullscreenElement || (document as any).webkitFullscreenElement) as Element | null;
+      const container = containerRef.current;
+      const isThisVideoFullscreen = Boolean(
+        fsElement &&
+        container &&
+        (fsElement === container || container.contains(fsElement))
+      );
+
+      setIsFullscreen(isThisVideoFullscreen);
+      if (isThisVideoFullscreen) {
         onFullscreenEnter?.();
-      } else {
+      } else if (!fsElement) {
         // On exit: blur to prevent focus-restoration scroll nudge
         if (document.activeElement instanceof HTMLVideoElement) document.activeElement.blur();
       }
@@ -3170,6 +3187,21 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
       }
     } catch {}
   };
+
+  const toggleLoop = () => {
+    const v = videoRef.current;
+    const next = !isLooping;
+    setIsLooping(next);
+    if (v) {
+      v.loop = next;
+    }
+  };
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.loop = isLooping;
+    }
+  }, [isLooping]);
 
   const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     const track = e.currentTarget;
@@ -3280,9 +3312,10 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
         </CVPCenterPlayBtn>
 
         {/* Controls overlay */}
-        <CVPControls $visible={showControls} data-cvp-controls onClick={(e) => e.stopPropagation()}>
+        <CVPControls $visible={showControls} data-cvp-controls data-quote-swipe-ignore onClick={(e) => e.stopPropagation()}>
           {/* Timeline */}
           <CVPTimelineWrapper
+            data-quote-swipe-ignore
             onMouseDown={(e) => { setIsDraggingTimeline(true); handleTimelineClick(e); }}
             onMouseMove={(e) => { if (isDraggingTimeline) handleTimelineClick(e); }}
             onMouseUp={() => setIsDraggingTimeline(false)}
@@ -3355,19 +3388,42 @@ const VideoPlayer = ({ src, onPointerDown, onFullscreenEnter }: { src: string; o
             {/* Spacer */}
             <div style={{ flex: 1 }} />
 
-            {/* Playback speed */}
-            <CVPSpeedBtn onClick={cycleSpeed} title="Playback speed" aria-label="Playback speed">
-              {SPEEDS[speedIdx]}×
-            </CVPSpeedBtn>
+            {/* Loop (fullscreen only) */}
+            {isFullscreen && (
+              <CVPIconBtn
+                $active={isLooping}
+                onClick={toggleLoop}
+                title={isLooping ? 'Loop on' : 'Loop off'}
+                aria-label={isLooping ? 'Disable loop' : 'Enable loop'}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="17 1 21 5 17 9" />
+                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                  <polyline points="7 23 3 19 7 15" />
+                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                </svg>
+              </CVPIconBtn>
+            )}
 
-            {/* Picture in Picture */}
-            {document.pictureInPictureEnabled && (
-              <CVPIconBtn className="cvp-pip-btn" onClick={togglePiP} title="Picture in Picture" aria-label="Picture in Picture">
+            {/* Picture in Picture (fullscreen only) */}
+            {isFullscreen && (
+              <CVPIconBtn
+                className="cvp-pip-btn"
+                onClick={togglePiP}
+                title="Picture in Picture"
+                aria-label="Picture in Picture"
+                disabled={!document.pictureInPictureEnabled}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="4" width="20" height="14" rx="2"/><rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor" stroke="none" opacity="0.6"/>
                 </svg>
               </CVPIconBtn>
             )}
+
+            {/* Playback speed */}
+            <CVPSpeedBtn onClick={cycleSpeed} title="Playback speed" aria-label="Playback speed">
+              {SPEEDS[speedIdx]}×
+            </CVPSpeedBtn>
 
             {/* Fullscreen */}
             <CVPIconBtn onClick={toggleFullscreen} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'} aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
@@ -3531,11 +3587,20 @@ const renderMessageContent = (
   sender: 'me' | 'other' = 'other',
   onVideoFullscreenEnter?: () => void,
   isMediaLoaded: boolean = true,
-  onRequestMediaLoad?: (messageId: string) => void,
+  onRequestMediaLoad?: (messageId: string, mediaUrl?: string) => void,
+  isMediaLoadInProgress: boolean = false,
+  mediaLoadProgress: number = 0,
+  onRequestDownload?: (messageId: string, mediaUrl: string, filename: string) => void,
+  isDownloadInProgress: boolean = false,
+  downloadProgress: number = 0,
+  loadedMediaSrc?: string | null,
 ) => {
   const isVideo = msg.type === 'video' || msg.url?.match(/\.(mp4|webm|mov)$/i);
   const isImage = msg.type === 'image' || msg.url?.match(/\.(jpeg|jpg|gif|png|svg)$/i);
   const shouldGateMedia = Boolean(msg.url) && !msg.isUploading && !isMediaLoaded;
+  const resolvedMediaUrl = loadedMediaSrc || msg.url || '';
+  const clampedLoadProgress = Math.max(0, Math.min(1, mediaLoadProgress || 0));
+  const clampedDownloadProgress = Math.max(0, Math.min(1, downloadProgress || 0));
 
   const DownloadSvg = () => (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -3545,10 +3610,31 @@ const renderMessageContent = (
     </svg>
   );
 
+  const RingedDownloadIcon = ({ progress }: { progress: number }) => (
+    <DownloadProgressRing $progress={progress} $visible={true}>
+      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+        <circle className="track" cx="18" cy="18" r="15.8" />
+        <circle className="progress" cx="18" cy="18" r="15.8" />
+      </svg>
+      <span className="cancel-icon">
+        <DownloadSvg />
+      </span>
+    </DownloadProgressRing>
+  );
+
+  const triggerDownload = (filename: string) => {
+    if (!msg.url) return;
+    if (onRequestDownload) {
+      onRequestDownload(msg.id, msg.url, filename);
+      return;
+    }
+    void downloadFile(msg.url, filename);
+  };
+
   const handleLoadMediaClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (onRequestMediaLoad) {
-      onRequestMediaLoad(msg.id);
+      onRequestMediaLoad(msg.id, msg.url);
     }
   };
 
@@ -3570,20 +3656,25 @@ const renderMessageContent = (
               onClick={handleLoadMediaClick}
             >
               <MediaLoadIcon>
-                <DownloadSvg />
+                {isMediaLoadInProgress ? <RingedDownloadIcon progress={clampedLoadProgress} /> : <DownloadSvg />}
               </MediaLoadIcon>
-              <MediaLoadLabel>Tap to load</MediaLoadLabel>
+              <MediaLoadLabel>{isMediaLoadInProgress ? `Loading ${Math.round(clampedLoadProgress * 100)}%` : 'Tap to load'}</MediaLoadLabel>
             </MediaLoadGate>
           ) : msg.url ? (
-            <img src={sanitizeMediaUrl(msg.url)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(msg.url); if (u) openLightbox(u); }} onPointerDown={() => onMediaPointerDown?.()} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
+            <img src={sanitizeMediaUrl(resolvedMediaUrl)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(resolvedMediaUrl); if (u) openLightbox(u); }} onPointerDown={() => onMediaPointerDown?.()} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
           ) : null}
           {msg.url && !shouldGateMedia && (
             <MediaDownloadOverlayBtn
-              title="Download"
+              title={isDownloadInProgress ? 'Downloading...' : 'Download'}
               aria-label="Download image"
-              onClick={(e) => { e.stopPropagation(); downloadFile(msg.url!, msg.originalName || 'image'); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isDownloadInProgress) return;
+                triggerDownload(msg.originalName || 'image');
+              }}
+              disabled={isDownloadInProgress}
             >
-              <DownloadSvg />
+              {isDownloadInProgress ? <RingedDownloadIcon progress={clampedDownloadProgress} /> : <DownloadSvg />}
             </MediaDownloadOverlayBtn>
           )}
         </MediaImageWrapper>
@@ -3607,22 +3698,27 @@ const renderMessageContent = (
                 onClick={handleLoadMediaClick}
               >
                 <MediaLoadIcon>
-                  <DownloadSvg />
+                  {isMediaLoadInProgress ? <RingedDownloadIcon progress={clampedLoadProgress} /> : <DownloadSvg />}
                 </MediaLoadIcon>
-                <MediaLoadLabel>Tap to load</MediaLoadLabel>
+                <MediaLoadLabel>{isMediaLoadInProgress ? `Loading ${Math.round(clampedLoadProgress * 100)}%` : 'Tap to load'}</MediaLoadLabel>
               </MediaLoadGate>
             </VideoPlayerWrapper>
           ) : (
-            <VideoPlayer src={msg.url} onPointerDown={onMediaPointerDown} onFullscreenEnter={onVideoFullscreenEnter} />
+            <VideoPlayer src={resolvedMediaUrl} onPointerDown={onMediaPointerDown} onFullscreenEnter={onVideoFullscreenEnter} />
           )}
           {/* Download button — top-left overlay, same style as image download btn */}
           {!shouldGateMedia && (
             <MediaDownloadOverlayBtn
-              title="Download video"
+              title={isDownloadInProgress ? 'Downloading...' : 'Download video'}
               aria-label="Download video"
-              onClick={(e) => { e.stopPropagation(); downloadFile(msg.url!, msg.originalName || 'video'); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isDownloadInProgress) return;
+                triggerDownload(msg.originalName || 'video');
+              }}
+              disabled={isDownloadInProgress}
             >
-              <DownloadSvg />
+              {isDownloadInProgress ? <RingedDownloadIcon progress={clampedDownloadProgress} /> : <DownloadSvg />}
             </MediaDownloadOverlayBtn>
           )}
         </MediaVideoWrapperDiv>
@@ -3634,17 +3730,23 @@ const renderMessageContent = (
   if (msg.type === 'file' || (msg.url && !isImage && !isVideo)) {
     return (
       <MediaContent>
-        <FileAttachmentCard onClick={() => msg.url && downloadFile(msg.url, msg.originalName || 'file')}>
+        <FileAttachmentCard onClick={() => { if (!isDownloadInProgress) triggerDownload(msg.originalName || 'file'); }}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
           <span>{msg.originalName || 'Download file'}</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', flexShrink: 0, opacity: 0.6 }}>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
+          {isDownloadInProgress ? (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <RingedDownloadIcon progress={clampedDownloadProgress} />
+            </div>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', flexShrink: 0, opacity: 0.6 }}>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          )}
         </FileAttachmentCard>
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
       </MediaContent>
@@ -3765,7 +3867,13 @@ interface MessageItemProps {
   openDeleteMenu: (messageId: string) => void;
   openLightbox: (url: string) => void;
   isMediaLoaded: boolean;
-  onRequestMediaLoad: (messageId: string) => void;
+  onRequestMediaLoad: (messageId: string, mediaUrl?: string) => void;
+  isMediaLoadInProgress: boolean;
+  mediaLoadProgress: number;
+  loadedMediaSrc?: string;
+  onRequestDownload: (messageId: string, mediaUrl: string, filename: string) => void;
+  isDownloadInProgress: boolean;
+  downloadProgress: number;
   deleteForMe: (messageId: string) => void;
   deleteForEveryone: (messageId: string) => void;
   scrollToMessage: (messageId: string, sourceMessageId?: string) => void;
@@ -3803,6 +3911,12 @@ const MessageItem = React.memo(({
   openLightbox,
   isMediaLoaded,
   onRequestMediaLoad,
+  isMediaLoadInProgress,
+  mediaLoadProgress,
+  loadedMediaSrc,
+  onRequestDownload,
+  isDownloadInProgress,
+  downloadProgress,
   deleteForMe,
   deleteForEveryone,
   scrollToMessage,
@@ -3857,11 +3971,21 @@ const MessageItem = React.memo(({
   const wasLongPressed = useRef(false);
   const touchStartPointRef = useRef<{ x: number; y: number } | null>(null);
   const suppressTapSelectionRef = useRef(false);
+  const ignoreSwipeGestureRef = useRef(false);
+  const swipeOffsetRef = useRef(0);
 
   const resetSwipePosition = useCallback((animate: boolean) => {
     if (!messageRowRef.current) return;
+    swipeOffsetRef.current = 0;
     messageRowRef.current.style.transform = 'translateX(0px)';
     messageRowRef.current.style.transition = animate ? 'transform 0.2s ease-out' : 'none';
+  }, []);
+
+  const isSwipeQuoteIgnoredTarget = useCallback((target: HTMLElement) => {
+    return Boolean(
+      target.closest('[data-quote-swipe-ignore]') ||
+      target.closest('button, a, input, textarea, [contenteditable="true"]')
+    );
   }, []);
 
   useEffect(() => {
@@ -3875,7 +3999,23 @@ const MessageItem = React.memo(({
     }
   }, [isEditing]);
 
-  useDrag(({ active, movement: [mx, my], last, tap, event }) => {
+  useDrag(({ active, movement: [mx, my], last, tap, first, event }) => {
+    const target = event.target as HTMLElement;
+
+    if (first) {
+      ignoreSwipeGestureRef.current = isSwipeQuoteIgnoredTarget(target);
+    }
+
+    if (ignoreSwipeGestureRef.current) {
+      if (last) {
+        ignoreSwipeGestureRef.current = false;
+        if (swipeOffsetRef.current > 0) {
+          resetSwipePosition(true);
+        }
+      }
+      return;
+    }
+
     // If a drag gesture is active (i.e., user is scrolling), cancel the long-press timer.
     if (active && longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
@@ -3884,7 +4024,6 @@ const MessageItem = React.memo(({
     }
 
     if (tap) {
-      const target = event.target as HTMLElement;
       // If the tap was on the MobileReactionPicker, ignore it completely.
       // The picker stays mounted while the full emoji panel is open, so
       // target.closest reliably catches taps on any of its buttons.
@@ -3928,11 +4067,12 @@ const MessageItem = React.memo(({
       mediaWasTapped.current = false;
       wasLongPressed.current = false;
       suppressTapSelectionRef.current = false;
+      ignoreSwipeGestureRef.current = false;
     }
 
     // Always restore the row position at the end of any gesture. This prevents
     // partially shifted bubbles when a horizontal swipe drifts vertically.
-    if (last) {
+    if (last && swipeOffsetRef.current > 0) {
       resetSwipePosition(true);
     }
 
@@ -3956,19 +4096,22 @@ const MessageItem = React.memo(({
 
     // While scrolling vertically (or dragging left), keep the row anchored.
     if (!isHorizontalGesture || mx <= 0) {
-      resetSwipePosition(false);
+      if (swipeOffsetRef.current > 0) {
+        resetSwipePosition(false);
+      }
       return;
     }
 
     // During a valid horizontal drag, update position with sane bounds.
     const newX = Math.min(Math.max(mx, 0), 80);
+    swipeOffsetRef.current = newX;
     messageRowRef.current.style.transform = `translateX(${newX}px)`;
     messageRowRef.current.style.transition = 'none';
   }, {
     filterTaps: true,
     eventOptions: { passive: true },
     target: messageRowRef,
-    drag: { threshold: 10 }
+    drag: { threshold: 10, axis: 'x' }
   });
 
   const currentUserReaction = useMemo(() => {
@@ -3989,6 +4132,7 @@ const MessageItem = React.memo(({
       wasLongPressed.current = false;
       mediaWasTapped.current = false;
       suppressTapSelectionRef.current = false;
+      ignoreSwipeGestureRef.current = false;
       touchStartPointRef.current = null;
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
@@ -4007,6 +4151,7 @@ const MessageItem = React.memo(({
     if (!isSelectModeActive) {
       wasLongPressed.current = false;
       suppressTapSelectionRef.current = false;
+      ignoreSwipeGestureRef.current = false;
     }
   }, [isSelectModeActive]);
 
@@ -4023,6 +4168,7 @@ const MessageItem = React.memo(({
   const isLongPressIgnoredTarget = useCallback((target: HTMLElement) => {
     return Boolean(
       target.closest('.mobile-reaction-picker') ||
+      target.closest('[data-quote-swipe-ignore]') ||
       target.closest('button, a, input, textarea, [contenteditable="true"]')
     );
   }, []);
@@ -4346,7 +4492,21 @@ const MessageItem = React.memo(({
                 )}
                 {/* DeleteMenu rendered as fixed portal — see block after </MessageRow> */}
                 {msg.type === 'text' && !msg.url && msg.text && (() => { const _u = detectFirstUrl(msg.text); return _u ? <LinkPreview url={_u} sender={sender} /> : null; })()}
-                {renderMessageContent(msg, openLightbox, isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined, sender, handleVideoFullscreenEnterForMessage, isMediaLoaded, onRequestMediaLoad)}
+                {renderMessageContent(
+                  msg,
+                  openLightbox,
+                  isMobileView && isSelectModeActive ? () => { mediaWasTapped.current = true; } : undefined,
+                  sender,
+                  handleVideoFullscreenEnterForMessage,
+                  isMediaLoaded,
+                  onRequestMediaLoad,
+                  isMediaLoadInProgress,
+                  mediaLoadProgress,
+                  onRequestDownload,
+                  isDownloadInProgress,
+                  downloadProgress,
+                  loadedMediaSrc
+                )}
                 <FooterContainer $sender={sender}>
                   <Timestamp $sender={sender}>{msg.edited && <span>(edited) </span>}{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Timestamp>
                 </FooterContainer>
@@ -4603,6 +4763,9 @@ function Chat() {
   // --- STATE MANAGEMENT ---
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadedMediaMessageIds, setLoadedMediaMessageIds] = useState<string[]>([]);
+  const [mediaLoadProgressById, setMediaLoadProgressById] = useState<Record<string, number>>({});
+  const [loadedMediaSrcById, setLoadedMediaSrcById] = useState<Record<string, string>>({});
+  const [downloadProgressById, setDownloadProgressById] = useState<Record<string, number>>({});
   const [inputMessage, setInputMessage] = useState('');
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxTransform, setLightboxTransform] = useState<{ scale: number; x: number; y: number }>({
@@ -4702,9 +4865,19 @@ function Chat() {
   const typingCooldownRef = useRef(false);
   const presenceActivityRef = useRef<'typing' | 'gif_selecting' | null>(null);
   const resizeRafRef = useRef<number>(0);
+  const stableViewportHeightRef = useRef<number>(window.innerHeight);
+  const stableViewportWidthRef = useRef<number>(window.innerWidth);
+  const appliedViewportHeightRef = useRef<number>(0);
+  const fullscreenScrollSnapshotRef = useRef<{ messageId: string; scrollTop: number; bottomOffset: number } | null>(null);
+  const isVideoFullscreenSessionRef = useRef(false);
+  const suppressProgrammaticScrollUntilRef = useRef<number>(0);
+  const pendingBottomScrollTimeoutsRef = useRef<number[]>([]);
   // WebSocket auto-reconnect management refs
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectDelayRef = useRef<number>(2000); // starts at 2 s, doubles on each retry
+  const mediaLoadInFlightRef = useRef<Set<string>>(new Set());
+  const mediaBlobUrlMapRef = useRef<Map<string, string>>(new Map());
+  const downloadInFlightRef = useRef<Set<string>>(new Set());
   const quoteJumpReturnStackRef = useRef<string[]>([]);
   const lightboxFrameRef = useRef<HTMLDivElement>(null);
   const lightboxPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -4768,6 +4941,57 @@ function Chat() {
   useEffect(() => {
     oldestLoadedAtRef.current = oldestLoadedAt;
   }, [oldestLoadedAt]);
+
+  useEffect(() => {
+    return () => {
+      mediaBlobUrlMapRef.current.forEach((url) => URL.revokeObjectURL(url));
+      mediaBlobUrlMapRef.current.clear();
+      mediaLoadInFlightRef.current.clear();
+      downloadInFlightRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const liveMessageIds = new Set(messages.map((m) => m.id));
+
+    setLoadedMediaSrcById((prev) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [messageId, src] of Object.entries(prev)) {
+        if (liveMessageIds.has(messageId)) {
+          next[messageId] = src;
+        } else {
+          changed = true;
+          const blobUrl = mediaBlobUrlMapRef.current.get(messageId);
+          if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+            mediaBlobUrlMapRef.current.delete(messageId);
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    setMediaLoadProgressById((prev) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [messageId, progress] of Object.entries(prev)) {
+        if (liveMessageIds.has(messageId)) next[messageId] = progress;
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+
+    setDownloadProgressById((prev) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+      for (const [messageId, progress] of Object.entries(prev)) {
+        if (liveMessageIds.has(messageId)) next[messageId] = progress;
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [messages]);
 
   useEffect(() => {
     const currentLength = messages.length;
@@ -4966,19 +5190,55 @@ function Chat() {
   // when the software keyboard shifts between Letters <-> Emojis without scaling layout bounds.
   // This explicitly guarantees our root wrapper mathematically fits within the visible space to avoid obscuring the chat box.
   useEffect(() => {
-    const handleViewportResize = () => {
-      // Use visualViewport if available (tracks exact keyboard intersections), fallback to innerHeight
-      const activeHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-      document.documentElement.style.setProperty('--app-height', `${activeHeight}px`);
+    const isTextInput = (el: Element | null): boolean => {
+      if (!(el instanceof HTMLElement)) return false;
+      return Boolean(el.closest('textarea, input, [contenteditable="true"]'));
     };
 
+    const applyAppHeight = (nextHeight: number) => {
+      const rounded = Math.round(nextHeight);
+      if (Math.abs(rounded - appliedViewportHeightRef.current) < 1) return;
+      appliedViewportHeightRef.current = rounded;
+      document.documentElement.style.setProperty('--app-height', `${rounded}px`);
+    };
+
+    const updateStableViewportBaseline = () => {
+      stableViewportWidthRef.current = window.innerWidth;
+      stableViewportHeightRef.current = window.innerHeight;
+      applyAppHeight(stableViewportHeightRef.current);
+    };
+
+    const handleViewportResize = () => {
+      const vvHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const widthDelta = Math.abs(window.innerWidth - stableViewportWidthRef.current);
+
+      // Width changes indicate orientation/device rotation; accept a new baseline.
+      if (widthDelta > 40) {
+        updateStableViewportBaseline();
+      }
+
+      const keyboardLikelyOpen =
+        isTextInput(document.activeElement) &&
+        (stableViewportHeightRef.current - vvHeight) > 96;
+
+      // Keep a stable height while scrolling (browser bars animating), but
+      // still adapt immediately to keyboard-open viewport shrink.
+      const targetHeight = keyboardLikelyOpen ? vvHeight : stableViewportHeightRef.current;
+      applyAppHeight(targetHeight);
+    };
+
+    updateStableViewportBaseline();
     handleViewportResize();
     window.visualViewport?.addEventListener('resize', handleViewportResize);
+    window.visualViewport?.addEventListener('scroll', handleViewportResize);
     window.addEventListener('resize', handleViewportResize);
+    window.addEventListener('orientationchange', handleViewportResize);
 
     return () => {
       window.visualViewport?.removeEventListener('resize', handleViewportResize);
+      window.visualViewport?.removeEventListener('scroll', handleViewportResize);
       window.removeEventListener('resize', handleViewportResize);
+      window.removeEventListener('orientationchange', handleViewportResize);
     };
   }, []);
 
@@ -5345,6 +5605,21 @@ function Chat() {
     return (chatContainerRef.current.querySelector('[data-virtuoso-scroller]') as HTMLElement | null) || chatContainerRef.current;
   }, []);
 
+  const shouldSuppressProgrammaticScroll = useCallback((): boolean => {
+    return isVideoFullscreenSessionRef.current || performance.now() < suppressProgrammaticScrollUntilRef.current;
+  }, []);
+
+  const clearPendingBottomScrollTimers = useCallback(() => {
+    if (pendingBottomScrollTimeoutsRef.current.length === 0) return;
+    pendingBottomScrollTimeoutsRef.current.forEach((id) => window.clearTimeout(id));
+    pendingBottomScrollTimeoutsRef.current = [];
+  }, []);
+
+  const scheduleProgrammaticScrollSuppression = useCallback((durationMs: number) => {
+    const until = performance.now() + Math.max(0, durationMs);
+    suppressProgrammaticScrollUntilRef.current = Math.max(suppressProgrammaticScrollUntilRef.current, until);
+  }, []);
+
   // ── Video fullscreen exit → restore scroll position ─────────────────
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -5355,8 +5630,29 @@ function Chat() {
         document.activeElement.blur();
       }
 
-      // Let Virtuoso's ResizeObserver natively maintain scroll position.
-      // Removed custom double-rAF manual scroll logic which fought Virtuoso.
+      if (!isVideoFullscreenSessionRef.current) return;
+      isVideoFullscreenSessionRef.current = false;
+
+      // Cancel any queued multi-timeout bottom-pins so fullscreen exit has a
+      // single scroll source of truth.
+      clearPendingBottomScrollTimers();
+      scheduleProgrammaticScrollSuppression(700);
+
+      const snapshot = fullscreenScrollSnapshotRef.current;
+      fullscreenScrollSnapshotRef.current = null;
+      if (!snapshot) return;
+
+      const scroller = getChatScrollerElement();
+      if (!scroller) return;
+
+      requestAnimationFrame(() => {
+        const targetFromBottom = scroller.scrollHeight - snapshot.bottomOffset;
+        const fallbackTarget = snapshot.scrollTop;
+        const target = Number.isFinite(targetFromBottom) ? targetFromBottom : fallbackTarget;
+        const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        const clamped = Math.max(0, Math.min(target, maxTop));
+        scroller.scrollTop = clamped;
+      });
     };
 
     document.addEventListener('fullscreenchange', handleFullscreenChange);
@@ -5365,7 +5661,7 @@ function Chat() {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
     };
-  }, []);
+  }, [clearPendingBottomScrollTimers, getChatScrollerElement, scheduleProgrammaticScrollSuppression]);
 
   // ── Drag-and-drop file upload ──────────────────────────────────────
   useEffect(() => {
@@ -5472,12 +5768,13 @@ function Chat() {
     const delays = [0, 250, 900, 1800];
     const timers = delays.map((ms) => setTimeout(() => {
       if (!virtuosoRef.current) return;
+      if (shouldSuppressProgrammaticScroll()) return;
       if (suppressInitialBottomPinRef.current || !isAtBottomRef.current) return;
       virtuosoRef.current.scrollToIndex({ index: targetIndex, align: 'end', behavior: 'auto' });
     }, ms));
 
     return () => timers.forEach(clearTimeout);
-  }, [historyLoaded, messages.length]);
+  }, [historyLoaded, messages.length, shouldSuppressProgrammaticScroll]);
 
 
   useEffect(() => {
@@ -5602,9 +5899,20 @@ function Chat() {
   }, [fetchAndPrependOlderMessages, historyLoaded]);
 
   const handleVideoFullscreenEnter = useCallback((messageId: string) => {
-    // Intentionally blank. Virtuoso's internal ResizeObserver naturally maintains
-    // scroll position anchoring. Manual tracking causes tug-of-war on exit.
-  }, []);
+    const scroller = getChatScrollerElement();
+    if (!scroller) return;
+
+    const scrollTop = scroller.scrollTop;
+    isVideoFullscreenSessionRef.current = true;
+    fullscreenScrollSnapshotRef.current = {
+      messageId,
+      scrollTop,
+      bottomOffset: scroller.scrollHeight - scrollTop,
+    };
+
+    clearPendingBottomScrollTimers();
+    scheduleProgrammaticScrollSuppression(1200);
+  }, [clearPendingBottomScrollTimers, getChatScrollerElement, scheduleProgrammaticScrollSuppression]);
 
   const resetInput = () => {
     setInputMessage('');
@@ -6422,15 +6730,94 @@ function Chat() {
     }
   }, []);
 
-  const handleRequestMediaLoad = useCallback((messageId: string) => {
-    if (!messageId) return;
-    setLoadedMediaMessageIds((prev) => {
-      if (prev.includes(messageId)) return prev;
-      const next = [...prev, messageId];
-      return next.length > MAX_LOADED_MEDIA_TRACKING
-        ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
-        : next;
-    });
+  const handleRequestMediaLoad = useCallback((messageId: string, mediaUrl?: string) => {
+    if (!messageId || !mediaUrl) return;
+    if (mediaLoadInFlightRef.current.has(messageId)) return;
+
+    const safeUrl = sanitizeMediaUrl(mediaUrl);
+    if (!safeUrl) {
+      setLoadedMediaMessageIds((prev) => {
+        if (prev.includes(messageId)) return prev;
+        const next = [...prev, messageId];
+        return next.length > MAX_LOADED_MEDIA_TRACKING
+          ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
+          : next;
+      });
+      return;
+    }
+
+    mediaLoadInFlightRef.current.add(messageId);
+    setMediaLoadProgressById((prev) => ({ ...prev, [messageId]: 0.02 }));
+
+    void (async () => {
+      try {
+        const blob = await fetchBlobWithProgress(safeUrl, (progress) => {
+          setMediaLoadProgressById((prev) => {
+            if (!(messageId in prev)) return prev;
+            return { ...prev, [messageId]: Math.max(0.02, Math.min(1, progress)) };
+          });
+        });
+
+        const objectUrl = URL.createObjectURL(blob);
+        const previousBlobUrl = mediaBlobUrlMapRef.current.get(messageId);
+        if (previousBlobUrl) URL.revokeObjectURL(previousBlobUrl);
+        mediaBlobUrlMapRef.current.set(messageId, objectUrl);
+        setLoadedMediaSrcById((prev) => ({ ...prev, [messageId]: objectUrl }));
+
+        setLoadedMediaMessageIds((prev) => {
+          if (prev.includes(messageId)) return prev;
+          const next = [...prev, messageId];
+          return next.length > MAX_LOADED_MEDIA_TRACKING
+            ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
+            : next;
+        });
+      } catch {
+        // Fallback: if prefetch progress fails (e.g. CORS/content-length mismatch),
+        // still allow direct media rendering so the user isn't stuck on the load gate.
+        setLoadedMediaMessageIds((prev) => {
+          if (prev.includes(messageId)) return prev;
+          const next = [...prev, messageId];
+          return next.length > MAX_LOADED_MEDIA_TRACKING
+            ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
+            : next;
+        });
+      } finally {
+        mediaLoadInFlightRef.current.delete(messageId);
+        setMediaLoadProgressById((prev) => {
+          if (!(messageId in prev)) return prev;
+          const { [messageId]: _discard, ...rest } = prev;
+          return rest;
+        });
+      }
+    })();
+  }, []);
+
+  const handleRequestDownload = useCallback((messageId: string, mediaUrl: string, filename: string) => {
+    if (!messageId || !mediaUrl) return;
+    if (downloadInFlightRef.current.has(messageId)) return;
+
+    downloadInFlightRef.current.add(messageId);
+    setDownloadProgressById((prev) => ({ ...prev, [messageId]: 0.02 }));
+
+    void (async () => {
+      try {
+        await downloadFile(mediaUrl, filename, (progress) => {
+          setDownloadProgressById((prev) => {
+            if (!(messageId in prev)) return prev;
+            return { ...prev, [messageId]: Math.max(0.02, Math.min(1, progress)) };
+          });
+        });
+      } finally {
+        downloadInFlightRef.current.delete(messageId);
+        window.setTimeout(() => {
+          setDownloadProgressById((prev) => {
+            if (!(messageId in prev)) return prev;
+            const { [messageId]: _discard, ...rest } = prev;
+            return rest;
+          });
+        }, 320);
+      }
+    })();
   }, []);
 
   // Clicking on empty space in the chat area focuses the input (WhatsApp-style).
@@ -6559,22 +6946,36 @@ function Chat() {
   }, [fetchAndPrependOlderMessages, historyLoaded, scrollToLoadedMessage]);
 
   const scrollToBottom = useCallback(() => {
+    if (shouldSuppressProgrammaticScroll()) return;
     if (virtuosoRef.current) {
       // Use an outrageously large index to guarantee anchoring to the end,
       // bypassing stale closure limits when called asynchronously.
       virtuosoRef.current.scrollToIndex({ index: 9999999, align: 'end', behavior: 'smooth' });
     }
-  }, []);
+  }, [shouldSuppressProgrammaticScroll]);
 
   const forceScrollToBottomAsync = useCallback(() => {
+    clearPendingBottomScrollTimers();
+    if (shouldSuppressProgrammaticScroll()) return;
+
     scrollToBottom();
     // Re-issue the scroll over the next 500ms to guarantee anchoring.
     // This perfectly tracks the mobile OS virtual keyboard retracting animation
     // and layout flex reflows (like reply previews unmounting).
-    setTimeout(scrollToBottom, 50);
-    setTimeout(scrollToBottom, 200);
-    setTimeout(scrollToBottom, 450);
-  }, [scrollToBottom]);
+    const delays = [50, 200, 450];
+    pendingBottomScrollTimeoutsRef.current = delays.map((delay) =>
+      window.setTimeout(() => {
+        if (shouldSuppressProgrammaticScroll()) return;
+        scrollToBottom();
+      }, delay)
+    );
+  }, [clearPendingBottomScrollTimers, scrollToBottom, shouldSuppressProgrammaticScroll]);
+
+  useEffect(() => {
+    return () => {
+      clearPendingBottomScrollTimers();
+    };
+  }, [clearPendingBottomScrollTimers]);
 
   const handleScrollToBottomButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -6635,7 +7036,10 @@ function Chat() {
   // --- PRE-RENDER HOOKS (must be before any early return to satisfy Rules of Hooks) ---
   const selectedMessageIds = useMemo(() => new Set(selectedMessages), [selectedMessages]);
   const loadedMediaMessageSet = useMemo(() => new Set(loadedMediaMessageIds), [loadedMediaMessageIds]);
-  const virtuosoFollowOutput = useCallback((isAtBottom: boolean): 'smooth' | false | 'auto' => isAtBottom ? 'auto' : false, []);
+  const virtuosoFollowOutput = useCallback((isAtBottom: boolean): 'smooth' | false | 'auto' => {
+    if (shouldSuppressProgrammaticScroll()) return false;
+    return isAtBottom ? 'auto' : false;
+  }, [shouldSuppressProgrammaticScroll]);
 
   // --- RENDER ---
   if (!userContext?.profile) { return <Auth onAuthSuccess={userContext!.login} tempToken={tempToken || null} />; }
@@ -7093,6 +7497,12 @@ function Chat() {
                           openLightbox={openLightbox}
                           isMediaLoaded={loadedMediaMessageSet.has(msg.id)}
                           onRequestMediaLoad={handleRequestMediaLoad}
+                          isMediaLoadInProgress={Object.prototype.hasOwnProperty.call(mediaLoadProgressById, msg.id)}
+                          mediaLoadProgress={mediaLoadProgressById[msg.id] ?? 0}
+                          loadedMediaSrc={loadedMediaSrcById[msg.id]}
+                          onRequestDownload={handleRequestDownload}
+                          isDownloadInProgress={Object.prototype.hasOwnProperty.call(downloadProgressById, msg.id)}
+                          downloadProgress={downloadProgressById[msg.id] ?? 0}
                           activeDeleteMenu={activeDeleteMenu}
                           deleteMenuRef={deleteMenuRef}
                           deleteForMe={deleteForMe}
