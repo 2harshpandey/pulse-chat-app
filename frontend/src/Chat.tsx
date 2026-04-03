@@ -7176,8 +7176,8 @@ function Chat() {
       ? Math.round(-scroller.clientHeight * QUOTE_JUMP_TARGET_TOP_RATIO)
       : 0;
 
-    const primaryIndex = firstItemIndexRef.current + msgIndex;
-    const fallbackIndex = firstItemIndexRef.current + msgIndex;
+    const absoluteIndex = firstItemIndexRef.current + msgIndex;
+    const relativeIndex = msgIndex;
 
     if (!force && shouldSuppressProgrammaticScroll()) {
       quoteWarn('scrollToLoadedMessage blocked by suppression window', {
@@ -7189,12 +7189,26 @@ function Chat() {
     }
 
     virtuosoRef.current?.scrollToIndex({
-      index: primaryIndex,
+      index: absoluteIndex,
       align: 'start',
       behavior,
       offset: Number.isFinite(offset) ? offset : 0,
     });
-    quoteLog('scrollToIndex issued', { targetId, primaryIndex, fallbackIndex, offset, behavior });
+    quoteLog('scrollToIndex issued', { targetId, absoluteIndex, relativeIndex, offset, behavior });
+
+    // Some Virtuoso configurations interpret scrollToIndex as relative to data,
+    // while others use the absolute index space with firstItemIndex.
+    // If the absolute jump did not mount the target row quickly, retry with
+    // relative indexing to avoid clamping to bottom.
+    window.setTimeout(() => {
+      if (findMessageElement(targetId)) return;
+      quoteLog('scrollToIndex retry with relative index', { targetId, relativeIndex });
+      virtuosoRef.current?.scrollToIndex({
+        index: relativeIndex,
+        align: 'center',
+        behavior: 'auto',
+      });
+    }, 70);
 
     const ensureVisibleAndHighlight = (attempt: number) => {
       const element = findMessageElement(targetId);
@@ -7218,14 +7232,22 @@ function Chat() {
         elementRect.top >= scrollerRect.top + margin &&
         elementRect.bottom <= scrollerRect.bottom - margin;
 
-      if (!isInsideViewport && attempt === 0 && fallbackIndex !== primaryIndex) {
-        quoteLog('retrying with fallback index', { targetId, fallbackIndex, primaryIndex });
+      if (!isInsideViewport && attempt === 0) {
+        quoteLog('retrying with fallback absolute+relative indices', { targetId, absoluteIndex, relativeIndex });
         virtuosoRef.current?.scrollToIndex({
-          index: fallbackIndex,
+          index: absoluteIndex,
           align: 'start',
           behavior: 'auto',
           offset: Number.isFinite(offset) ? offset : 0,
         });
+        window.setTimeout(() => {
+          if (findMessageElement(targetId)) return;
+          virtuosoRef.current?.scrollToIndex({
+            index: relativeIndex,
+            align: 'center',
+            behavior: 'auto',
+          });
+        }, 50);
         window.setTimeout(() => ensureVisibleAndHighlight(attempt + 1), 40);
         return;
       }
