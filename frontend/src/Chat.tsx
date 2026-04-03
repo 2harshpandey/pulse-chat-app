@@ -806,7 +806,7 @@ const MessagesContainer = styled.div<{ $isScrollButtonVisible?: boolean; $isMobi
   overflow: hidden;
   padding: 0 1rem;
   padding-right: ${props => !props.$isMobileView && props.$isScrollButtonVisible ? '64px' : '1rem'};
-  transition: padding-right 0.3s ease;
+  transition: none;
   /* Virtuoso items need gap via item wrapper since Virtuoso manages its own scroll */
   & [data-virtuoso-scroller] {
     overflow-y: auto !important;
@@ -851,6 +851,13 @@ const MessageRow = styled.div<{ $sender: string; $isSelected?: boolean; $isActiv
   &.quote-jump-highlight {
     animation: ${quoteJumpHighlight} 1.25s ease-out;
   }
+
+  @media (max-width: 768px) {
+    &, & * {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
 `;
 const Username = styled.div<{ $sender: 'me' | 'other' }>`
   font-size: 0.75rem;
@@ -862,7 +869,7 @@ const Username = styled.div<{ $sender: 'me' | 'other' }>`
   background-color: ${props => props.$sender === 'me' ? '#DBEAFE' : '#F1F5F9'};
   color: ${props => props.$sender === 'me' ? '#1E40AF' : '#475569'};
   text-shadow: none;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: none;
 
   [data-theme='dark'] & {
     background-color: ${props => props.$sender === 'me' ? 'rgba(59,130,246,0.2)' : 'var(--bg-hover)'};
@@ -984,7 +991,7 @@ const Timestamp = styled.div<{ $sender: string }>`
   white-space: nowrap;
   color: ${props => props.$sender === 'me' ? '#bfdbfe' : 'var(--text-muted)'};
   user-select: none;
-  transition: color 0.3s ease;
+  transition: none;
 `;
 const Footer = styled.footer`
   background-color: var(--bg-header);
