@@ -1068,7 +1068,7 @@ const MediaContent = styled.div`
 const mediaFrameStyles = css`
   position: relative;
   display: block;
-  width: min(100%, clamp(208px, 58vw, 320px));
+  width: clamp(208px, 58vw, 320px);
   max-width: 100%;
   flex: 0 0 auto;
   aspect-ratio: 1 / 1;
@@ -1076,11 +1076,11 @@ const mediaFrameStyles = css`
   overflow: hidden;
 
   @media (max-width: 768px) {
-    width: min(100%, clamp(192px, 70vw, 260px));
+    width: clamp(192px, 70vw, 260px);
   }
 
   @media (max-width: 420px) {
-    width: min(100%, clamp(176px, 72vw, 236px));
+    width: clamp(176px, 72vw, 236px);
   }
 `;
 
@@ -2961,17 +2961,19 @@ const CVPCenterPlayBtn = styled.div<{ $visible: boolean }>`
 /* ─── Download Progress Ring (WhatsApp/Telegram style) ───────────── */
 const DownloadProgressRing = styled.div<{ $progress: number; $visible: boolean }>`
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 100%;
+  height: 100%;
   flex-shrink: 0;
   display: ${p => p.$visible ? 'flex' : 'none'};
   align-items: center;
   justify-content: center;
 
-  svg {
+  & > svg.ring-svg {
     position: absolute;
     top: 0;
     left: 0;
+    width: 100% !important;
+    height: 100% !important;
     transform: rotate(-90deg);
   }
 
@@ -2992,11 +2994,13 @@ const DownloadProgressRing = styled.div<{ $progress: number; $visible: boolean }
   }
 
   .cancel-icon {
+    position: relative;
+    z-index: 1;
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
-    svg { position: static; transform: none; width: 14px; height: 14px; }
+    /* Reset any inherited SVG sizes for the center icon if needed, though parent styles might still hit it */
   }
 `;
 
@@ -3612,7 +3616,7 @@ const renderMessageContent = (
 
   const RingedDownloadIcon = ({ progress }: { progress: number }) => (
     <DownloadProgressRing $progress={progress} $visible={true}>
-      <svg width="36" height="36" viewBox="0 0 36 36" aria-hidden="true">
+      <svg className="ring-svg" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true" style={{ width: '100%', height: '100%' }}>
         <circle className="track" cx="18" cy="18" r="15.8" />
         <circle className="progress" cx="18" cy="18" r="15.8" />
       </svg>
@@ -3737,7 +3741,7 @@ const renderMessageContent = (
           </svg>
           <span>{msg.originalName || 'Download file'}</span>
           {isDownloadInProgress ? (
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}>
               <RingedDownloadIcon progress={clampedDownloadProgress} />
             </div>
           ) : (
@@ -4808,7 +4812,15 @@ function Chat() {
   const [hasMoreOlderMessages, setHasMoreOlderMessages] = useState(true);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [oldestLoadedAt, setOldestLoadedAt] = useState<string | null>(null);
-  const [firstItemIndex, setFirstItemIndex] = useState(INITIAL_FIRST_ITEM_INDEX);
+  const [firstItemIndex, setFirstItemIndexState] = useState(INITIAL_FIRST_ITEM_INDEX);
+  const firstItemIndexRef = useRef(INITIAL_FIRST_ITEM_INDEX);
+  const setFirstItemIndex = useCallback((valOrUpdater: number | ((prev: number) => number)) => {
+    setFirstItemIndexState((prev) => {
+      const next = typeof valOrUpdater === 'function' ? valOrUpdater(prev) : valOrUpdater;
+      firstItemIndexRef.current = next;
+      return next;
+    });
+  }, []);
   const hasMoreOlderMessagesRef = useRef(hasMoreOlderMessages);
   const oldestLoadedAtRef = useRef<string | null>(oldestLoadedAt);
   // Use a ref (not state) for the message ID associated with the full emoji picker.
@@ -5770,7 +5782,7 @@ function Chat() {
       if (!virtuosoRef.current) return;
       if (shouldSuppressProgrammaticScroll()) return;
       if (suppressInitialBottomPinRef.current || !isAtBottomRef.current) return;
-      virtuosoRef.current.scrollToIndex({ index: targetIndex, align: 'end', behavior: 'auto' });
+      virtuosoRef.current.scrollToIndex({ index: firstItemIndexRef.current + targetIndex, align: 'end', behavior: 'auto' });
     }, ms));
 
     return () => timers.forEach(clearTimeout);
@@ -6544,7 +6556,7 @@ function Chat() {
     if (prevSelectModeRef.current && !isSelectModeActive) {
       requestAnimationFrame(() => {
         if (isAtBottomRef.current && virtuosoRef.current) {
-          virtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: 'end', behavior: 'auto' });
+          virtuosoRef.current.scrollToIndex({ index: firstItemIndexRef.current + messages.length - 1, align: 'end', behavior: 'auto' });
         }
       });
     }
@@ -6873,7 +6885,7 @@ function Chat() {
         : 0;
 
       virtuosoRef.current?.scrollToIndex({
-        index: msgIndex,
+        index: firstItemIndexRef.current + msgIndex,
         align: 'start',
         behavior: nextBehavior,
         offset: Number.isFinite(offset) ? offset : 0,
@@ -7440,6 +7452,7 @@ function Chat() {
                 {historyLoaded ? (
                   <Virtuoso
                     ref={virtuosoRef}
+                    alignToBottom
                     firstItemIndex={firstItemIndex}
                     data={messages}
                     initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
