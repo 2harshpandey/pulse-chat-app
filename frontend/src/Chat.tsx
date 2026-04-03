@@ -7183,9 +7183,22 @@ function Chat() {
   // --- PRE-RENDER HOOKS (must be before any early return to satisfy Rules of Hooks) ---
   const selectedMessageIds = useMemo(() => new Set(selectedMessages), [selectedMessages]);
   const loadedMediaMessageSet = useMemo(() => new Set(loadedMediaMessageIds), [loadedMediaMessageIds]);
-  const virtuosoFollowOutput = useCallback((isAtBottom: boolean): 'smooth' | false | 'auto' => {
+  // ─── FIX: followOutput must use OUR isAtBottomRef, not Virtuoso's parameter ──
+  // Virtuoso's `isAtBottom` parameter can be `true` for a brief moment during
+  // a programmatic scroll-to-quoted-message because the smooth scroll animation
+  // passes through the bottom row.  When that happens, returning 'auto' tells
+  // Virtuoso to pin to the last item, OVERRIDING the quote-jump target.
+  //
+  // Using isAtBottomRef.current (which we control via atBottomStateChange) is
+  // more reliable: it only becomes `true` after the user has genuinely scrolled
+  // to the bottom, not during a programmatic animation.
+  //
+  // Additionally, if suppressProgrammaticScrollUntilRef is active (set by
+  // scrollToLoadedMessage before a quote-jump), we always return false.
+  const virtuosoFollowOutput = useCallback((_isAtBottom: boolean): 'smooth' | false | 'auto' => {
     if (shouldSuppressProgrammaticScroll()) return false;
-    return isAtBottom ? 'auto' : false;
+    // Only auto-follow when the user is genuinely at the bottom.
+    return isAtBottomRef.current ? 'auto' : false;
   }, [shouldSuppressProgrammaticScroll]);
 
   // --- RENDER ---
