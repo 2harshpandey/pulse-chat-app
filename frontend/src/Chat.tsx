@@ -8,6 +8,7 @@ import { UserContext, UserProfile } from './UserContext';
 import { useTheme } from './ThemeContext';
 import { useParams } from 'react-router-dom';
 import Auth from './Auth';
+import { getCachedMediaBlob, setCachedMediaBlob } from './mediaCache';
 
 // --- UTILITY ---
 const getUserId = (): string => {
@@ -301,6 +302,9 @@ const formatMediaSize = (bytes?: number): string => {
   const precision = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(precision)} ${units[unitIndex]}`;
 };
+
+const getMediaCacheLookupKey = (messageId: string, sourceUrl: string): string =>
+  `${messageId}::${sourceUrl}`;
 
 const getFileContainerLabel = (name?: string, fileUrl?: string): string => {
   let candidate = (name || '').trim();
@@ -5254,6 +5258,7 @@ function Chat() {
   const reconnectDelayRef = useRef<number>(2000); // starts at 2 s, doubles on each retry
   const mediaLoadInFlightRef = useRef<Set<string>>(new Set());
   const mediaBlobUrlMapRef = useRef<Map<string, string>>(new Map());
+  const mediaCacheHydrationInFlightRef = useRef<Set<string>>(new Set());
   const downloadInFlightRef = useRef<Set<string>>(new Set());
   const downloadAbortControllersRef = useRef(new Map<string, AbortController>());
   const mediaLoadAbortControllersRef = useRef(new Map<string, AbortController>());
@@ -5331,10 +5336,27 @@ function Chat() {
     return () => {
       mediaBlobUrlMapRef.current.forEach((url) => URL.revokeObjectURL(url));
       mediaBlobUrlMapRef.current.clear();
+      mediaCacheHydrationInFlightRef.current.clear();
       mediaLoadInFlightRef.current.clear();
       downloadInFlightRef.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (userContext?.profile) return;
+
+    mediaLoadAbortControllersRef.current.forEach((controller) => controller.abort());
+    mediaLoadAbortControllersRef.current.clear();
+    mediaLoadInFlightRef.current.clear();
+    mediaCacheHydrationInFlightRef.current.clear();
+
+    mediaBlobUrlMapRef.current.forEach((url) => URL.revokeObjectURL(url));
+    mediaBlobUrlMapRef.current.clear();
+
+    setLoadedMediaMessageIds([]);
+    setLoadedMediaSrcById({});
+    setMediaLoadProgressById({});
+  }, [userContext?.profile]);
 
   useEffect(() => {
     const liveMessageIds = new Set(messages.map((m) => m.id));
@@ -5419,6 +5441,59 @@ function Chat() {
 
     messageTailSnapshotRef.current = { length: currentLength, lastId: currentLastId };
   }, [historyLoaded, messages]);
+
+  useEffect(() => {
+    if (!userContext?.profile || messages.length === 0) return;
+
+    let isCancelled = false;
+    const loadedMessageIds = new Set(loadedMediaMessageIds);
+    const userId = userIdRef.current;
+
+    messages.forEach((message) => {
+      if (!message?.id || !message?.url) return;
+      if (message.isUploading) return;
+      if (message.type !== 'image' && message.type !== 'video') return;
+      if (loadedMessageIds.has(message.id)) return;
+      if (Object.prototype.hasOwnProperty.call(loadedMediaSrcById, message.id)) return;
+      if (mediaLoadInFlightRef.current.has(message.id)) return;
+
+      const safeUrl = sanitizeMediaUrl(message.url);
+      if (!safeUrl) return;
+
+      const lookupKey = getMediaCacheLookupKey(message.id, safeUrl);
+      if (mediaCacheHydrationInFlightRef.current.has(lookupKey)) return;
+      mediaCacheHydrationInFlightRef.current.add(lookupKey);
+
+      void getCachedMediaBlob(userId, message.id, safeUrl)
+        .then((cachedBlob) => {
+          if (isCancelled || !cachedBlob || cachedBlob.size <= 0) return;
+          if (!messagesRef.current.some((m) => m.id === message.id)) return;
+
+          const objectUrl = URL.createObjectURL(cachedBlob);
+          const previousBlobUrl = mediaBlobUrlMapRef.current.get(message.id);
+          if (previousBlobUrl && previousBlobUrl !== objectUrl) {
+            URL.revokeObjectURL(previousBlobUrl);
+          }
+          mediaBlobUrlMapRef.current.set(message.id, objectUrl);
+
+          setLoadedMediaSrcById((prev) => ({ ...prev, [message.id]: objectUrl }));
+          setLoadedMediaMessageIds((prev) => {
+            if (prev.includes(message.id)) return prev;
+            const next = [...prev, message.id];
+            return next.length > MAX_LOADED_MEDIA_TRACKING
+              ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
+              : next;
+          });
+        })
+        .finally(() => {
+          mediaCacheHydrationInFlightRef.current.delete(lookupKey);
+        });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [messages, loadedMediaMessageIds, loadedMediaSrcById, userContext?.profile]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputMessage(e.target.value);
@@ -7242,6 +7317,26 @@ function Chat() {
 
     void (async () => {
       try {
+        const cachedBlob = await getCachedMediaBlob(userIdRef.current, messageId, safeUrl);
+        if (abortController.signal.aborted) return;
+
+        if (cachedBlob && cachedBlob.size > 0) {
+          const objectUrl = URL.createObjectURL(cachedBlob);
+          const previousBlobUrl = mediaBlobUrlMapRef.current.get(messageId);
+          if (previousBlobUrl) URL.revokeObjectURL(previousBlobUrl);
+          mediaBlobUrlMapRef.current.set(messageId, objectUrl);
+          setLoadedMediaSrcById((prev) => ({ ...prev, [messageId]: objectUrl }));
+
+          setLoadedMediaMessageIds((prev) => {
+            if (prev.includes(messageId)) return prev;
+            const next = [...prev, messageId];
+            return next.length > MAX_LOADED_MEDIA_TRACKING
+              ? next.slice(next.length - MAX_LOADED_MEDIA_TRACKING)
+              : next;
+          });
+          return;
+        }
+
         const blob = await fetchBlobWithProgress(safeUrl, (progress) => {
           setMediaLoadProgressById((prev) => {
             if (!(messageId in prev)) return prev;
@@ -7249,11 +7344,15 @@ function Chat() {
           });
         }, abortController.signal);
 
+        if (abortController.signal.aborted) return;
+
         const objectUrl = URL.createObjectURL(blob);
         const previousBlobUrl = mediaBlobUrlMapRef.current.get(messageId);
         if (previousBlobUrl) URL.revokeObjectURL(previousBlobUrl);
         mediaBlobUrlMapRef.current.set(messageId, objectUrl);
         setLoadedMediaSrcById((prev) => ({ ...prev, [messageId]: objectUrl }));
+
+        void setCachedMediaBlob(userIdRef.current, messageId, safeUrl, blob);
 
         setLoadedMediaMessageIds((prev) => {
           if (prev.includes(messageId)) return prev;

@@ -1,4 +1,5 @@
 import React, { createContext, useState, ReactNode } from 'react';
+import { clearCachedMediaForUser } from './mediaCache';
 
 // This interface is now exported and includes all necessary fields
 export interface UserProfile {
@@ -37,6 +38,10 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = () => {
+    const userId = localStorage.getItem('pulseUserId') || '';
+    if (userId) {
+      void clearCachedMediaForUser(userId);
+    }
     localStorage.removeItem('pulseUsername');
     sessionStorage.removeItem('chatCleared'); // Reset the chat clear flag on logout
     setProfile(null);
