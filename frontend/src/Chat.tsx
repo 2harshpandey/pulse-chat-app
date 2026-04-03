@@ -345,22 +345,9 @@ const HISTORY_PAGE_SIZE = 50;
 // scroll through it, load next page".
 const START_REACHED_COOLDOWN_MS = 1500;
 const INITIAL_FIRST_ITEM_INDEX = 100000;
-// ─── SCROLL INSTRUMENTATION ──────────────────────────────────────────────────
-// Set PULSE_SCROLL_DEBUG=true in localStorage to enable verbose scroll logging.
-const _scrollDebug = (() => {
-  try { return localStorage.getItem('PULSE_SCROLL_DEBUG') === 'true'; } catch { return false; }
-})();
-const scrollLog = _scrollDebug
-  ? (...args: unknown[]) => console.log('[PulseScroll]', ...args)
-  : () => {};
-// Set PULSE_QUOTE_DEBUG=true in localStorage to enable quote-target diagnostics.
-const _quoteDebug = (() => {
-  try { return localStorage.getItem('PULSE_QUOTE_DEBUG') === 'true'; } catch { return false; }
-})();
-const quoteLog = _quoteDebug
-  ? (...args: unknown[]) => console.log('[PulseQuote]', ...args)
-  : () => {};
-const quoteWarn = (...args: unknown[]) => console.warn('[PulseQuote]', ...args);
+const scrollLog = (..._args: unknown[]) => {};
+const quoteLog = (..._args: unknown[]) => {};
+const quoteWarn = (..._args: unknown[]) => {};
 const MAX_LINK_PREVIEW_CACHE_ENTRIES = 250;
 const VIRTUOSO_OVERSCAN_DESKTOP = 128;
 const VIRTUOSO_OVERSCAN_MOBILE = 96;
@@ -2017,20 +2004,6 @@ const QuotedMediaThumb = styled.div`
     object-fit: cover;
     display: block;
   }
-`;
-
-const QuotedVideoBadge = styled.span`
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  font-size: 0.56rem;
-  font-weight: 700;
-  color: #f8fafc;
-  background: rgba(2, 6, 23, 0.72);
-  border: 1px solid rgba(226, 232, 240, 0.35);
-  border-radius: 999px;
-  padding: 1px 5px;
-  line-height: 1;
 `;
 
 const LinkPreviewCard = styled.a<{ $sender: 'me' | 'other' }>`
@@ -3747,7 +3720,7 @@ const renderMessageContent = (
   };
 
   const handleLoadMediaPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    e.stopPropagation();
+    // Keep pointer events bubbling so swipe-to-quote can start from gated media.
     onMediaPointerDown?.();
   };
 
@@ -3758,6 +3731,7 @@ const renderMessageContent = (
           {msg.url && shouldGateMedia ? (
             <MediaLoadGate
               type="button"
+              data-allow-quote-swipe
               aria-label="Load image"
               title="Load image"
               onPointerDown={handleLoadMediaPointerDown}
@@ -3799,6 +3773,7 @@ const renderMessageContent = (
             <VideoPlayerWrapper>
               <MediaLoadGate
                 type="button"
+                data-allow-quote-swipe
                 aria-label="Load video"
                 title="Load video"
                 onPointerDown={handleLoadMediaPointerDown}
@@ -4088,6 +4063,7 @@ const MessageItem = React.memo(({
   }, []);
 
   const isSwipeQuoteIgnoredTarget = useCallback((target: HTMLElement) => {
+    if (target.closest('[data-allow-quote-swipe]')) return false;
     return Boolean(
       target.closest('[data-quote-swipe-ignore]') ||
       target.closest('button, a, input, textarea, [contenteditable="true"]')
@@ -4449,7 +4425,6 @@ const MessageItem = React.memo(({
                         loading="lazy"
                         decoding="async"
                       />
-                      {msg.replyingTo.type === 'video' && <QuotedVideoBadge>Video</QuotedVideoBadge>}
                     </QuotedMediaThumb>
                   ) : (
                     <div
