@@ -32,6 +32,12 @@ const normalizeMessageId = (rawId: any): string => {
   return '';
 };
 
+const getMessageElementId = (rawId: any): string => {
+  const normalized = normalizeMessageId(rawId);
+  if (!normalized) return '';
+  return `message-${encodeURIComponent(normalized)}`;
+};
+
 const resolveReplyTargetId = (replyingTo: any, sourceMessageId?: string): string => {
   const sourceId = normalizeMessageId(sourceMessageId);
   const candidates = [replyingTo?.id, replyingTo?.messageId, replyingTo?._id];
@@ -814,7 +820,7 @@ const MobileReactionPicker = styled.div<{ $sender: 'me' | 'other' }>`
 const MessageBubble = styled.div<{ $sender: string; $messageType: string; $isUploading?: boolean; $uploadError?: boolean; }>`
   position: relative;
   max-width: ${props => props.$messageType === 'text' ? '62%' : 'min(84vw, 356px)'};
-  padding: ${props => props.$messageType === 'text' ? '0.24rem 0.48rem 0.12rem' : '0.28rem 0.34rem'};
+    padding: ${props => props.$messageType === 'text' ? '0.24rem 0.48rem 0.12rem' : '0.28rem 0.34rem'};
   border-radius: 0.82rem;
   background-color: ${props => props.$sender === 'me' ? '#3B82F6' : 'var(--bg-message-other)'};
   color: ${props => props.$sender === 'me' ? 'white' : 'var(--text-primary)'};
@@ -4341,7 +4347,7 @@ const MessageItem = React.memo(({
   return (
     <React.Fragment>
       <MessageRow
-        id={`message-${msg.id}`}
+        id={getMessageElementId(msg.id)}
         ref={messageRowRef}
         $sender={sender}
         $isSelected={isSelected}
@@ -6363,7 +6369,7 @@ function Chat() {
     // (footer has grown to include the reply preview, container has shrunk).
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const msgElement = document.getElementById(`message-${replyingTo.id}`);
+        const msgElement = document.getElementById(getMessageElementId(replyingTo.id));
         const container = chatContainerRef.current?.querySelector('[data-virtuoso-scroller]') as HTMLElement || chatContainerRef.current;
         if (!msgElement || !container) return;
         const containerRect = container.getBoundingClientRect();
@@ -7082,7 +7088,7 @@ function Chat() {
     const attemptDelayMs = 60;
 
     const applyHighlight = (attempt: number) => {
-      const element = document.getElementById(`message-${messageId}`);
+      const element = document.getElementById(getMessageElementId(messageId));
       if (!element) {
         if (attempt < maxAttempts) {
           window.setTimeout(() => applyHighlight(attempt + 1), attemptDelayMs);
@@ -7174,7 +7180,7 @@ function Chat() {
     quoteLog('scrollToIndex issued', { targetId, primaryIndex, fallbackIndex, offset, behavior });
 
     const ensureVisibleAndHighlight = (attempt: number) => {
-      const element = document.getElementById(`message-${targetId}`) as HTMLElement | null;
+      const element = document.getElementById(getMessageElementId(targetId)) as HTMLElement | null;
       const currentScroller = getChatScrollerElement();
 
       if (!element || !currentScroller) {
