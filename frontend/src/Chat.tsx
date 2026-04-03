@@ -6826,9 +6826,20 @@ function Chat() {
     });
   }, []);
 
+  // Ref to track the last emitted atBottom state to avoid redundant updates
+  const lastAtBottomStateRef = useRef(true);
+
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     isAtBottomRef.current = atBottom;
-    setIsScrollToBottomVisible(!atBottom);
+    
+    // Only update visibility during user-initiated scroll, not programmatic scroll.
+    // This prevents state-update cascades that cause render flicker during quote-jumps.
+    const isInProgrammaticScroll = performance.now() < suppressProgrammaticScrollUntilRef.current;
+    if (!isInProgrammaticScroll && lastAtBottomStateRef.current !== atBottom) {
+      lastAtBottomStateRef.current = atBottom;
+      setIsScrollToBottomVisible(!atBottom);
+    }
+    
     if (!atBottom) {
       // After first history render, user scroll-up should immediately cancel
       // any pending auto-pin-to-bottom stabilization timers.
@@ -7004,11 +7015,13 @@ function Chat() {
     // ─── FIX: Quote-jump going to bottom ────────────────────────────────────
     // When scrollToIndex fires, Virtuoso briefly emits atBottomStateChange(false)
     // then the followOutput callback can re-pin to the bottom, overriding the
-    // quote-jump position. Suppress ALL programmatic bottom-pinning for 1.2 s
-    // after a quote-jump so the scroll lands and stays at the target.
+    // quote-jump position. Suppress ALL programmatic bottom-pinning for 1.5 s
+    // after a quote-jump so the scroll lands and stays at the target, and also
+    // suppress state updates during this window to prevent render cascades.
     // This also cancels any pending forceScrollToBottomAsync timers.
     clearPendingBottomScrollTimers();
-    scheduleProgrammaticScrollSuppression(1200);
+    scheduleProgrammaticScrollSuppression(1500);
+    lastAtBottomStateRef.current = false; // Pre-set to avoid spurious update on atButtoChanged
     scrollLog('quote-jump to msgIndex', msgIndex, 'firstItemIndex', firstItemIndexRef.current);
 
     const scrollToTarget = (nextBehavior: 'auto' | 'smooth') => {
@@ -7227,6 +7240,9 @@ function Chat() {
     ? `${newMessagesIndicatorLabel} new message${newMessagesWhileScrolledUp === 1 ? '' : 's'}`
     : 'Scroll to latest messages';
   const virtuosoOverscan = isMobileView ? VIRTUOSO_OVERSCAN_MOBILE : VIRTUOSO_OVERSCAN_DESKTOP;
+  // On mobile, use higher overscan to pre-render more messages and prevent
+  // visible placeholder content during scroll. Reduces jitter from placeholder swaps.
+  const adjustedVirtuosoOverscan = isMobileView ? Math.round(VIRTUOSO_OVERSCAN_MOBILE * 1.5) : virtuosoOverscan;
   const virtuosoIncreaseViewportBy = isMobileView ? VIRTUOSO_VIEWPORT_BY_MOBILE : VIRTUOSO_VIEWPORT_BY_DESKTOP;
 
 
@@ -7617,7 +7633,7 @@ function Chat() {
                     atBottomThreshold={20}
                     defaultItemHeight={72}
                     increaseViewportBy={virtuosoIncreaseViewportBy}
-                    overscan={virtuosoOverscan}
+                    overscan={adjustedVirtuosoOverscan}
                     scrollSeekConfiguration={virtuosoScrollSeekConfiguration}
                     computeItemKey={(index: number, msg: Message) => msg.id || index}
                     style={{ flex: 1, overflow: 'auto' }}
