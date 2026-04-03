@@ -7016,43 +7016,35 @@ function Chat() {
     if (msgIndex === -1) return false;
 
     // ─── FIX: Quote-jump going to bottom ────────────────────────────────────
-    // When scrollToIndex fires, Virtuoso briefly emits atBottomStateChange(false)
-    // then the followOutput callback can re-pin to the bottom, overriding the
-    // quote-jump position. Suppress ALL programmatic bottom-pinning for 1.5 s
-    // after a quote-jump so the scroll lands and stays at the target, and also
-    // suppress state updates during this window to prevent render cascades.
-    // This also cancels any pending forceScrollToBottomAsync timers.
+    // Virtuoso's followOutput can override scrollToIndex because smooth animations
+    // pass through the bottom row, triggering bottom-pin logic. Solution:
+    // 1. Use 'auto' (instant) scroll for quote-jumps instead of 'smooth'
+    // 2. Suppress all bottom-pinning for 5+ seconds
+    // 3. Track if the user manually scrolled during this window
     clearPendingBottomScrollTimers();
-    scheduleProgrammaticScrollSuppression(3000);
-    lastAtBottomStateRef.current = false; // Pre-set to avoid spurious update on atButtoChanged
+    scheduleProgrammaticScrollSuppression(5000);  // Long enough to ensure user can't re-trigger bottom-pin
+    lastAtBottomStateRef.current = false;
     scrollLog('quote-jump to msgIndex', msgIndex, 'firstItemIndex', firstItemIndexRef.current);
 
-    const scrollToTarget = (nextBehavior: 'auto' | 'smooth') => {
-      const scroller = getChatScrollerElement();
-      const offset = scroller
-        ? Math.round(-scroller.clientHeight * QUOTE_JUMP_TARGET_TOP_RATIO)
-        : 0;
+    const scroller = getChatScrollerElement();
+    const offset = scroller
+      ? Math.round(-scroller.clientHeight * QUOTE_JUMP_TARGET_TOP_RATIO)
+      : 0;
 
-      virtuosoRef.current?.scrollToIndex({
-        index: firstItemIndexRef.current + msgIndex,
-        align: 'start',
-        behavior: nextBehavior,
-        offset: Number.isFinite(offset) ? offset : 0,
-      });
-    };
+    // ALWAYS use 'auto' for quote-jumps to avoid smooth animation triggering bottom-pin
+    virtuosoRef.current?.scrollToIndex({
+      index: firstItemIndexRef.current + msgIndex,
+      align: 'start',
+      behavior: 'auto',  // Instant jump, never smooth for quotes
+      offset: Number.isFinite(offset) ? offset : 0,
+    });
 
-    if (behavior === 'smooth') {
-      scrollToTarget('smooth');
-      window.setTimeout(() => highlightMessage(messageId), 430);
-      return true;
-    }
-
-    scrollToTarget('auto');
-    window.setTimeout(() => highlightMessage(messageId), 120);
+    // Highlight the message immediately since it's now on-screen
+    window.setTimeout(() => highlightMessage(messageId), 50);
     return true;
   }, [clearPendingBottomScrollTimers, getChatScrollerElement, highlightMessage, scheduleProgrammaticScrollSuppression]);
 
-  const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string) => {
+  const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string, behavior: 'auto' | 'smooth' = 'auto') => {
     if (sourceMessageId && sourceMessageId !== messageId) {
       const stack = quoteJumpReturnStackRef.current;
       const lastSourceId = stack[stack.length - 1];
@@ -7066,7 +7058,7 @@ function Chat() {
     }
 
     if (!messageId) return;
-    if (scrollToLoadedMessage(messageId, 'smooth')) return;
+    if (scrollToLoadedMessage(messageId, 'auto')) return;
     if (!historyLoaded) return;
 
     void (async () => {
@@ -7101,7 +7093,7 @@ function Chat() {
       }
 
       requestAnimationFrame(() => {
-        scrollToLoadedMessage(messageId, 'smooth');
+        scrollToLoadedMessage(messageId, 'auto');
       });
     })();
   }, [fetchAndPrependOlderMessages, historyLoaded, scrollToLoadedMessage]);
@@ -7197,19 +7189,19 @@ function Chat() {
   // --- PRE-RENDER HOOKS (must be before any early return to satisfy Rules of Hooks) ---
   const selectedMessageIds = useMemo(() => new Set(selectedMessages), [selectedMessages]);
   const loadedMediaMessageSet = useMemo(() => new Set(loadedMediaMessageIds), [loadedMediaMessageIds]);
-  // ─── FIX: followOutput must return false during ANY programmatic scroll ──
-  // Virtuoso's followOutput is called on every scroll frame. Even checking
-  // shouldSuppressProgrammaticScroll() can be too late if the suppression window
-  // just expired. The safest approach: disable followOutput completely during
-  // quote-jumps and restores, and only enable it for genuine user scrolling.
+  // ─── FIX: followOutput aggressively blocks during programmatic scroll ──
+  // The key insight: followOutput is called on EVERY scroll frame, and Virtuoso's
+  // internal isAtBottom param can be true even when the user hasn't genuinely
+  // scrolled to bottom (e.g., during animation). We must:
+  // 1. Always return false during suppression window (prevents overrides)
+  // 2. Only return 'auto' if BOTH suppressProgrammaticScroll window is expired AND user is at bottom
+  // 3. Use our isAtBottomRef (set by real user scroll), not Virtuoso's param
   const virtuosoFollowOutput = useCallback((_isAtBottom: boolean): 'smooth' | false | 'auto' => {
-    // Block ALL auto-follow during video fullscreen restore or quote-jump suppression.
+    // ALWAYS return false if in suppression window - no exceptions
     if (isVideoFullscreenSessionRef.current) return false;
     if (performance.now() < suppressProgrammaticScrollUntilRef.current) return false;
     
-    // Only auto-follow when the user is genuinely at the bottom.
-    // Use our ref (not the param) because Virtuoso's param can briefly emit true
-    // during smooth scroll animations that pass through the bottom row.
+    // Only enable auto-follow if user is genuinely at bottom (our own tracking)
     return isAtBottomRef.current ? 'auto' : false;
   }, []);
 
