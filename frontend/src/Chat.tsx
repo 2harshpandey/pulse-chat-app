@@ -3952,7 +3952,7 @@ interface MessageItemProps {
   downloadProgress: number;
   deleteForMe: (messageId: string) => void;
   deleteForEveryone: (messageId: string) => void;
-  scrollToMessage: (messageId: string, sourceMessageId?: string, behavior?: 'auto' | 'smooth', force?: boolean) => void;
+  scrollToMessage: (messageId: string, sourceMessageId?: string, behavior?: 'auto' | 'smooth', force?: boolean, replyingToPayload?: any) => void;
   isSelectModeActive: boolean;
   isSelected: boolean;
   handleToggleSelectMessage: (messageId: string) => void;
@@ -4394,7 +4394,7 @@ const MessageItem = React.memo(({
                   e.stopPropagation();
                   if (msg.replyingTo) {
                     const replyTargetId = resolveReplyTargetId(msg.replyingTo, msg.id);
-                    if (replyTargetId) scrollToMessage(replyTargetId, msg.id, 'auto', true);
+                    if (replyTargetId) scrollToMessage(replyTargetId, msg.id, 'auto', true, msg.replyingTo);
                   }
                 }}
               >
@@ -7166,8 +7166,65 @@ function Chat() {
     return true;
   }, [clearPendingBottomScrollTimers, engageQuoteJumpLock, firstItemIndex, getChatScrollerElement, highlightMessage, scheduleProgrammaticScrollSuppression, shouldSuppressProgrammaticScroll]);
 
-  const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string, behavior: 'auto' | 'smooth' = 'auto', force = false) => {
-    const targetId = normalizeMessageId(messageId);
+  const resolveReplyNavigationTargetId = useCallback((
+    requestedMessageId: string,
+    sourceMessageId?: string,
+    replyingToPayload?: any,
+  ): string => {
+    const sourceId = normalizeMessageId(sourceMessageId);
+    const directRequested = normalizeMessageId(requestedMessageId);
+    const idsInMemory = new Set(messagesRef.current.map((m) => normalizeMessageId(m.id)).filter(Boolean));
+
+    const candidateIds = [
+      directRequested,
+      normalizeMessageId(replyingToPayload?.id),
+      normalizeMessageId(replyingToPayload?.messageId),
+      normalizeMessageId(replyingToPayload?._id),
+    ].filter(Boolean);
+
+    for (const candidate of candidateIds) {
+      if (sourceId && candidate === sourceId) continue;
+      if (idsInMemory.has(candidate)) return candidate;
+    }
+
+    if (!replyingToPayload) return directRequested;
+
+    const replyText = typeof replyingToPayload.text === 'string' ? replyingToPayload.text.trim() : '';
+    const replyUsername = typeof replyingToPayload.username === 'string' ? replyingToPayload.username.trim() : '';
+    const replyType = typeof replyingToPayload.type === 'string' ? replyingToPayload.type : '';
+    const replyUrl = typeof replyingToPayload.url === 'string' ? replyingToPayload.url.trim() : '';
+
+    const sourceIndex = sourceId
+      ? messagesRef.current.findIndex((m) => normalizeMessageId(m.id) === sourceId)
+      : -1;
+
+    const metadataMatches = messagesRef.current
+      .map((m, index) => ({ m, index }))
+      .filter(({ m }) => {
+        if (sourceId && normalizeMessageId(m.id) === sourceId) return false;
+        if (replyUsername && m.username !== replyUsername) return false;
+        if (replyType && m.type !== replyType) return false;
+        if (replyUrl && (m.url || '').trim() !== replyUrl) return false;
+        if (replyText && (m.text || '').trim() !== replyText) return false;
+        if (!replyText && !replyUrl) return false;
+        return true;
+      });
+
+    if (metadataMatches.length === 0) return directRequested;
+
+    const preferred = sourceIndex > 0
+      ? metadataMatches.filter(({ index }) => index < sourceIndex)
+      : metadataMatches;
+
+    const chosen = preferred.length > 0
+      ? preferred[preferred.length - 1]
+      : metadataMatches[metadataMatches.length - 1];
+
+    return normalizeMessageId(chosen.m.id) || directRequested;
+  }, []);
+
+  const scrollToMessage = useCallback((messageId: string, sourceMessageId?: string, behavior: 'auto' | 'smooth' = 'auto', force = false, replyingToPayload?: any) => {
+    const targetId = resolveReplyNavigationTargetId(messageId, sourceMessageId, replyingToPayload);
     const sourceId = normalizeMessageId(sourceMessageId);
 
     if (targetId && sourceId && targetId === sourceId) return;
@@ -7223,7 +7280,7 @@ function Chat() {
         scrollToLoadedMessage(targetId, behavior, force);
       });
     })();
-  }, [fetchAndPrependOlderMessages, historyLoaded, scrollToLoadedMessage]);
+  }, [fetchAndPrependOlderMessages, historyLoaded, resolveReplyNavigationTargetId, scrollToLoadedMessage]);
 
   const scrollToBottom = useCallback((behavior: 'auto' | 'smooth' = 'auto', force = false) => {
     if (!force && shouldSuppressProgrammaticScroll()) return;
@@ -7880,7 +7937,7 @@ function Chat() {
                 <div>
                   {replyingTo && <ReplyPreviewContainer ref={replyPreviewRef} onClick={() => {
                     const replyTargetId = resolveReplyTargetId(replyingTo);
-                    if (replyTargetId) scrollToMessage(replyTargetId);
+                    if (replyTargetId) scrollToMessage(replyTargetId, undefined, 'auto', true, replyingTo);
                   }}>
                     {replyingTo.type === 'video' && replyingTo.url ? (
                       <video src={replyingTo.url} style={{ width: '40px', height: '40px', borderRadius: '6px', objectFit: 'cover' }} />
