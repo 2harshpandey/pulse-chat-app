@@ -8487,7 +8487,10 @@ function Chat() {
                           </div>
                         );
                       }
-                      const prevMsg = index > 0 ? messages[index - 1] : null;
+                      const dataIndex = index - firstItemIndex;
+                      const prevMsg = dataIndex > 0 && dataIndex <= messages.length
+                        ? messages[dataIndex - 1]
+                        : null;
                       const showUsername = !prevMsg
                         || prevMsg.type === 'system_notification'
                         || prevMsg.userId !== msg.userId;

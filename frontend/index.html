@@ -8,6 +8,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#000000" />
     <meta name="description" content="Pulse | A real-time chat application" />
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('pulseTheme');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = saved ? saved : (prefersDark ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon_io/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>Pulse</title>
