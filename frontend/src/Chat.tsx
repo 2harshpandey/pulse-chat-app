@@ -1097,6 +1097,13 @@ const MessageInput = styled.textarea<{ $hasUrl?: boolean }>`
   font-family: inherit;
   font-size: 1rem;
   line-height: 1.5;
+  letter-spacing: inherit;
+  font-weight: inherit;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  box-sizing: border-box;
   resize: none;
   max-height: 120px;
   overflow-y: hidden;
@@ -1135,8 +1142,12 @@ const InputHighlightOverlay = styled.div`
   font-family: inherit;
   font-size: 1rem;
   line-height: 1.5;
+  letter-spacing: inherit;
+  font-weight: inherit;
+  box-sizing: border-box;
   white-space: pre-wrap;
   word-wrap: break-word;
+  overflow-wrap: break-word;
   word-break: break-word;
   color: var(--text-primary);
   border-radius: calc(0.75rem - 1px);
@@ -1144,6 +1155,8 @@ const InputHighlightOverlay = styled.div`
   pointer-events: none;
   overflow: hidden;
   z-index: 0;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
 `;
 const CharacterCounter = styled.span<{ $warning: boolean }>`
   position: absolute;
@@ -5285,6 +5298,7 @@ function Chat() {
   const fullEmojiPickerRef = useRef<HTMLDivElement>(null!);
   const emojiButtonRef = useRef<HTMLButtonElement>(null!);
   const messageInputRef = useRef<HTMLTextAreaElement>(null!);
+  const inputOverlayRef = useRef<HTMLDivElement>(null);
   const userIdRef = useRef<string>(getUserId());
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Cooldown flag: true while we're within the throttle window after sending start_typing.
@@ -5556,6 +5570,12 @@ function Chat() {
     };
   }, [messages, loadedMediaMessageIds, loadedMediaSrcById, userContext?.profile]);
 
+  const syncInputOverlayScroll = useCallback(() => {
+    if (!messageInputRef.current || !inputOverlayRef.current) return;
+    inputOverlayRef.current.scrollTop = messageInputRef.current.scrollTop;
+    inputOverlayRef.current.scrollLeft = messageInputRef.current.scrollLeft;
+  }, []);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputMessage(e.target.value);
     // Fire typing indicator outside of React's render cycle so it never
@@ -5569,6 +5589,7 @@ function Chat() {
       textarea.style.height = 'auto';
       textarea.style.height = `${textarea.scrollHeight}px`;
       textarea.style.overflowY = textarea.scrollHeight > 120 ? 'auto' : 'hidden';
+      syncInputOverlayScroll();
     });
   };
   const replyPreviewRef = useRef<HTMLDivElement>(null);
@@ -8708,7 +8729,7 @@ function Chat() {
                         return (
                           <>
                             {hasUrl && (
-                              <InputHighlightOverlay aria-hidden="true">
+                              <InputHighlightOverlay ref={inputOverlayRef} aria-hidden="true">
                                 {renderTextWithLinks(inputMessage, 'other')}
                               </InputHighlightOverlay>
                             )}
@@ -8721,6 +8742,7 @@ function Chat() {
                               onChange={handleInputChange}
                               onKeyDown={handleInputKeyDown}
                               onPaste={handlePaste}
+                              onScroll={syncInputOverlayScroll}
                               maxLength={MAX_MESSAGE_LENGTH}
                             />
                           </>
