@@ -8487,17 +8487,14 @@ function Chat() {
                           </div>
                         );
                       }
-                      // Always show username to avoid dynamic padding shifts during Virtuoso recycling.
-                      // The previous fix of dynamic padding based on grouping caused messages to shake
-                      // as rows were recycled because the grouping relationship changed for reused rows.
-                      // Showing username always uses consistent spacing and prevents this jitter.
-                      const showUsername = true;
+                      const prevMsg = index > 0 ? messages[index - 1] : null;
+                      const showUsername = !prevMsg
+                        || prevMsg.type === 'system_notification'
+                        || prevMsg.userId !== msg.userId;
                       return (
                         <MessageItem
                           msg={msg}
                           showUsername={showUsername}
-                          // Note: Always passing showUsername=true means $isGrouped will always be false,
-                          // so MessageRow will always use its fixed padding. This prevents jitter.
                           currentUserId={userIdRef.current}
                           handleSetReply={handleSetReply}
                           handleReact={handleReact}
