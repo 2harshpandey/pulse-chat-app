@@ -3849,6 +3849,7 @@ const renderMessageContent = (
   const mediaSizeLabel = formatMediaSize(msg.size);
   const fileContainerLabel = getFileContainerLabel(msg.originalName, msg.url);
   const fileMetaLabel = [formatMediaSize(msg.size), fileContainerLabel].filter(Boolean).join(' • ');
+  const canDownload = sender === 'other';
   const gatePreviewUrl = shouldGateMedia
     ? sanitizeMediaUrl(getMediaGatePreviewUrl(isVideo ? 'video' : 'image', resolvedMediaUrl || msg.url))
     : '';
@@ -3938,7 +3939,7 @@ const renderMessageContent = (
           ) : msg.url ? (
             <img src={sanitizeMediaUrl(resolvedMediaUrl)} alt={msg.originalName} onClick={() => { const u = sanitizeMediaUrl(resolvedMediaUrl); if (u) openLightbox(u); }} onPointerDown={() => onMediaPointerDown?.()} onDoubleClick={(e) => e.preventDefault()} onContextMenu={(e) => e.preventDefault()} />
           ) : null}
-          {msg.url && !shouldGateMedia && (
+          {msg.url && !shouldGateMedia && canDownload && (
             <MediaDownloadOverlayBtn
               title={isDownloadInProgress ? 'Tap to cancel' : 'Download'}
               aria-label={isDownloadInProgress ? 'Cancel download' : 'Download image'}
@@ -3992,7 +3993,7 @@ const renderMessageContent = (
             <VideoPlayer src={resolvedMediaUrl} onPointerDown={onMediaPointerDown} onFullscreenEnter={onVideoFullscreenEnter} />
           )}
           {/* Download button — top-left overlay, same style as image download btn */}
-          {!shouldGateMedia && (
+          {!shouldGateMedia && canDownload && (
             <MediaDownloadOverlayBtn
               title={isDownloadInProgress ? 'Tap to cancel' : 'Download video'}
               aria-label={isDownloadInProgress ? 'Cancel download' : 'Download video'}
@@ -4014,7 +4015,7 @@ const renderMessageContent = (
   if (msg.type === 'file' || (msg.url && !isImage && !isVideo)) {
     return (
       <MediaContent>
-        <FileAttachmentCard onClick={() => { if (!isDownloadInProgress) triggerDownload(msg.originalName || 'file'); }}>
+        <FileAttachmentCard onClick={() => { if (canDownload && !isDownloadInProgress) triggerDownload(msg.originalName || 'file'); }}>
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
@@ -4023,17 +4024,17 @@ const renderMessageContent = (
             <FileAttachmentName>{msg.originalName || 'Download file'}</FileAttachmentName>
             <FileAttachmentDetails>{fileMetaLabel}</FileAttachmentDetails>
           </FileAttachmentMeta>
-          {isDownloadInProgress ? (
+          {canDownload && isDownloadInProgress ? (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px' }}>
               <RingedDownloadIcon progress={clampedDownloadProgress} />
             </div>
-          ) : (
+          ) : canDownload ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 'auto', flexShrink: 0, opacity: 0.6 }}>
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
-          )}
+          ) : null}
         </FileAttachmentCard>
         {msg.text && <MessageText style={{ paddingTop: '0.5rem' }}>{renderTextWithLinks(msg.text, sender)}</MessageText>}
       </MediaContent>
