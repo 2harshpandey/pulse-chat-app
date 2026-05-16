@@ -55,6 +55,81 @@ const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.
 const isAllowedDownloadHost = (hostname) =>
   ALLOWED_DOWNLOAD_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
 
+const isBlockedHostname = (hostname) => {
+  if (!hostname) return true;
+  const lower = hostname.toLowerCase();
+  if (lower === 'localhost' || lower.endsWith('.localhost')) return true;
+  if (lower.endsWith('.local') || lower.endsWith('.internal')) return true;
+  return false;
+};
+
+const resolveHostnameIps = async (hostname) => {
+  try {
+    return await dns.promises.lookup(hostname, { all: true });
+  } catch (error) {
+    logger.warn('DNS lookup failed for hostname', { hostname, message: error.message });
+    return [];
+  }
+};
+
+const assertSafeDownloadUrl = async (targetUrl) => {
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    throw new Error('Invalid URL.');
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error('Invalid URL protocol.');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (isBlockedHostname(hostname)) {
+    throw new Error('Blocked hostname.');
+  }
+
+  if (!isAllowedDownloadHost(hostname)) {
+    throw new Error('Untrusted download host.');
+  }
+
+  if (net.isIP(hostname) && isPrivateOrInternalIp(hostname)) {
+    throw new Error('Blocked IP address.');
+  }
+
+  const resolved = await resolveHostnameIps(hostname);
+  if (resolved.length === 0) {
+    throw new Error('Failed to resolve hostname.');
+  }
+
+  for (const entry of resolved) {
+    if (isPrivateOrInternalIp(entry.address)) {
+      throw new Error('Blocked internal IP resolution.');
+    }
+  }
+
+  return parsed.href;
+};
+
+const runWithSafeRedirects = async (executor, initialUrl) => {
+  let currentUrl = await assertSafeDownloadUrl(initialUrl);
+  const maxRedirects = 3;
+
+  for (let i = 0; i <= maxRedirects; i += 1) {
+    const response = await executor(currentUrl);
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers?.location;
+      if (!location) throw new Error('Redirect missing location.');
+      const nextUrl = new URL(location, currentUrl).href;
+      currentUrl = await assertSafeDownloadUrl(nextUrl);
+      continue;
+    }
+    return response;
+  }
+
+  throw new Error('Too many redirects.');
+};
+
 const sanitizeDownloadFilename = (name, fallback = 'download') => {
   const raw = String(name || '').trim();
   const cleaned = raw
@@ -968,24 +1043,24 @@ app.all('/api/download', apiLimiter, async (req, res) => {
 
     const fetchHead = (targetUrl) => axios.head(targetUrl, {
       timeout: 20000,
-      maxRedirects: 3,
-      validateStatus: (status) => status >= 200 && status < 300,
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 400,
     });
 
     const fetchBody = (targetUrl) => axios.get(targetUrl, {
       responseType: 'arraybuffer',
       timeout: 30000,
-      maxRedirects: 3,
-      validateStatus: (status) => status >= 200 && status < 300,
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 400,
     });
 
     const runWithCloudinaryFallback = async (executor) => {
       try {
-        return await executor(parsedUrl.href);
+        return await runWithSafeRedirects(executor, parsedUrl.href);
       } catch (err) {
         const signedUrl = getSignedCloudinaryDownloadUrl(parsedUrl.href, safeFilename);
         if (!signedUrl) throw err;
-        return executor(signedUrl);
+        return runWithSafeRedirects(executor, signedUrl);
       }
     };
 
