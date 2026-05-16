@@ -52,8 +52,10 @@ const isPrivateOrInternalIp = (ip) => {
 
 const ALLOWED_DOWNLOAD_HOSTS = ['res.cloudinary.com', 'media.tenor.com', 'tenor.com'];
 
-const isAllowedDownloadHost = (hostname) =>
-  ALLOWED_DOWNLOAD_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+const getAllowedDownloadHost = (hostname) =>
+  ALLOWED_DOWNLOAD_HOSTS.find((host) => hostname === host) || '';
+
+const isAllowedDownloadHost = (hostname) => Boolean(getAllowedDownloadHost(hostname));
 
 const isBlockedHostname = (hostname) => {
   if (!hostname) return true;
@@ -70,6 +72,20 @@ const resolveHostnameIps = async (hostname) => {
     logger.warn('DNS lookup failed for hostname', { hostname, message: error.message });
     return [];
   }
+};
+
+const buildSafeDownloadUrl = (parsedUrl, allowedHost) => {
+  const safeProtocol = 'https:';
+  const safeOrigin = `${safeProtocol}//${allowedHost}`;
+  const rawPath = parsedUrl.pathname ? parsedUrl.pathname.replace(/\\/g, '/') : '/';
+  const normalizedPath = path.posix.normalize(rawPath);
+  if (!normalizedPath.startsWith('/') || normalizedPath.startsWith('/..')) {
+    throw new Error('Invalid URL path.');
+  }
+  const safeUrl = new URL(safeOrigin);
+  safeUrl.pathname = normalizedPath;
+  safeUrl.search = parsedUrl.search || '';
+  return safeUrl.href;
 };
 
 const assertSafeDownloadUrl = async (targetUrl) => {
@@ -89,7 +105,8 @@ const assertSafeDownloadUrl = async (targetUrl) => {
     throw new Error('Blocked hostname.');
   }
 
-  if (!isAllowedDownloadHost(hostname)) {
+  const allowedHost = getAllowedDownloadHost(hostname);
+  if (!allowedHost) {
     throw new Error('Untrusted download host.');
   }
 
@@ -108,7 +125,7 @@ const assertSafeDownloadUrl = async (targetUrl) => {
     }
   }
 
-  return parsed.href;
+  return buildSafeDownloadUrl(parsed, allowedHost);
 };
 
 const runWithSafeRedirects = async (executor, initialUrl) => {
