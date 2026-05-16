@@ -1153,7 +1153,9 @@ const InputHighlightOverlay = styled.div`
   border-radius: calc(0.75rem - 1px);
   background: var(--bg-input);
   pointer-events: none;
-  overflow: hidden;
+  max-height: 120px;
+  overflow-y: auto;
+  overflow-x: hidden;
   z-index: 0;
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
