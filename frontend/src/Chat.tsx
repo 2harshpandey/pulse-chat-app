@@ -3842,7 +3842,8 @@ const renderMessageContent = (
 ) => {
   const isVideo = msg.type === 'video' || msg.url?.match(/\.(mp4|webm|mov)$/i);
   const isImage = msg.type === 'image' || msg.url?.match(/\.(jpeg|jpg|gif|png|svg)$/i);
-  const shouldGateMedia = Boolean(msg.url) && !msg.isUploading && !isMediaLoaded;
+  const isOwnMessage = sender === 'me';
+  const shouldGateMedia = Boolean(msg.url) && !msg.isUploading && !isMediaLoaded && !isOwnMessage;
   const resolvedMediaUrl = loadedMediaSrc || msg.url || '';
   const clampedLoadProgress = Math.max(0, Math.min(1, mediaLoadProgress || 0));
   const clampedDownloadProgress = Math.max(0, Math.min(1, downloadProgress || 0));
